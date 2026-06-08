@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bitácora de Refinería</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <!-- Firebase SDKs -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import {
+      getFirestore, collection, getDocs, addDoc, updateDoc, deleteDoc, doc, onSnapshot, serverTimestamp, query, orderBy
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    import {
+      getStorage, ref, uploadBytes, getDownloadURL, deleteObject
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
+
+    // ─── FIREBASE CONFIG ───────────────────────────────────────────
+    // Replace with your own firebaseConfig from the Firebase console
+    const firebaseConfig = {
+      apiKey:            "YOUR_API_KEY",
+      authDomain:        "YOUR_AUTH_DOMAIN",
+      projectId:         "YOUR_PROJECT_ID",
+      storageBucket:     "YOUR_STORAGE_BUCKET",
+      messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+      appId:             "YOUR_APP_ID"
+    };
+    // ──────────────────────────────────────────────────────────────
+
+    const app = initializeApp(firebaseConfig);
+    const db  = getFirestore(app);
+    const storage = getStorage(app);
+
+    // Expose to global scope so app.js can use them
+    window._fb = { db, storage, collection, getDocs, addDoc, updateDoc, deleteDoc, doc, onSnapshot, serverTimestamp, query, orderBy, ref, uploadBytes, getDownloadURL, deleteObject };
+    window.dispatchEvent(new Event("firebaseReady"));
+  </script>
+</head>
+<body>
+
+<div class="app" id="app">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-icon"><i class="ti ti-flame"></i></div>
+    <div>
+      <h1>Bitácora de Refinería</h1>
+      <p>Registro histórico de eventos, programas y documentos</p>
+    </div>
+    <div class="header-right">
+      <span id="sync-status" class="sync-badge sync-ok"><i class="ti ti-cloud-check"></i> Sincronizado</span>
+      <button class="btn-primary" onclick="openNewModal()"><i class="ti ti-plus"></i> Nuevo evento</button>
+    </div>
+  </div>
+
+  <!-- NAV -->
+  <div class="nav">
+    <div class="nav-tab active" onclick="switchTab('dashboard')"><i class="ti ti-chart-bar"></i> Dashboard</div>
+    <div class="nav-tab" onclick="switchTab('events')"><i class="ti ti-list"></i> Eventos</div>
+    <div class="nav-tab" onclick="switchTab('gantt')"><i class="ti ti-calendar-event"></i> Gantt</div>
+    <div class="nav-tab" onclick="switchTab('ai')"><i class="ti ti-message-circle"></i> Pregúntale</div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div id="view-dashboard" class="view active">
+    <div class="stats-grid" id="stats-grid"></div>
+    <div class="section-header">
+      <span class="section-title">Últimos eventos</span>
+      <button class="btn-pdf" onclick="exportAllEventsPDF()"><i class="ti ti-file-type-pdf"></i> Exportar todos</button>
+    </div>
+    <div class="events-list" id="recent-list"></div>
+  </div>
+
+  <!-- EVENTS -->
+  <div id="view-events" class="view">
+    <div class="toolbar">
+      <input type="text" id="search-input" placeholder="Buscar eventos..." oninput="renderEvents()" />
+      <button class="btn-pdf" onclick="exportAllEventsPDF()"><i class="ti ti-file-type-pdf"></i> Exportar PDF</button>
+    </div>
+    <div class="filters" id="filter-bar"></div>
+    <div class="events-list" id="events-list"></div>
+  </div>
+
+  <!-- GANTT -->
+  <div id="view-gantt" class="view">
+    <div class="gantt-toolbar">
+      <div class="gantt-title-block">
+        <div id="gantt-event-title" class="gantt-title">Selecciona un evento</div>
+        <div id="gantt-event-sub" class="gantt-sub"></div>
+      </div>
+      <div class="gantt-actions">
+        <select id="gantt-event-select" onchange="loadGanttTab()"></select>
+        <button class="btn-primary btn-sm" onclick="showGanttAddForm()"><i class="ti ti-plus"></i> Agregar tarea</button>
+        <button class="btn-pdf btn-sm" id="btn-export-gantt" onclick="exportGanttPDF()" style="display:none"><i class="ti ti-file-type-pdf"></i> Exportar Gantt</button>
+      </div>
+    </div>
+    <div id="gantt-tab-container"></div>
+    <div id="gantt-add-form" class="add-form" style="display:none">
+      <div class="form-row-5">
+        <div class="form-group"><label>Actividad</label><input type="text" id="gt-name" placeholder="Nombre de la actividad" /></div>
+        <div class="form-group"><label>Fecha inicio</label><input type="date" id="gt-start-date" /></div>
+        <div class="form-group"><label>Días</label><input type="number" id="gt-dur" min="1" value="3" /></div>
+        <div class="form-group"><label>Responsable</label><input type="text" id="gt-resp" /></div>
+        <div class="form-group form-end"><button class="btn-primary btn-sm" onclick="saveGanttTask()">Agregar</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI -->
+  <div id="view-ai" class="view">
+    <div class="info-note">
+      <i class="ti ti-sparkles"></i>
+      <span>Consulta todos los eventos registrados en Firebase, sus Gantts y archivos adjuntos. Pregunta en español o inglés.</span>
+    </div>
+    <div class="ai-chat" id="ai-chat">
+      <div class="msg msg-ai">Hola, soy el asistente de la refinería. Tengo acceso a todos los eventos registrados, sus programas de trabajo y archivos. ¿Qué necesitas saber?</div>
+    </div>
+    <div class="ai-chips" id="ai-chips"></div>
+    <div class="ai-input-row">
+      <input type="text" id="ai-input" placeholder="¿Cuándo fue el último paro? / What catalyst was used?" onkeydown="if(event.key==='Enter')sendAI()" />
+      <button class="btn-primary" onclick="sendAI()"><i class="ti ti-send"></i></button>
+    </div>
+  </div>
+
+</div><!-- /app -->
+
+<div id="modal-root"></div>
+<div class="toast" id="toast"></div>
+
+<script src="app.js" type="module"></script>
+</body>
+</html>
