@@ -1,3 +1,4 @@
+
 // app.js — Bitácora de Refinería
 
 const TYPE_LABELS = {shutdown:'Paro de planta',repair:'Reparación',catalyst:'Catalizador',material:'Materiales',maintenance:'Mantenimiento',other:'Otro'};
@@ -606,7 +607,7 @@ window.askAI=async function(question){
     return base+extracted;
   }).join('\n\n---\n\n');
   try{
-    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,system:`You are an expert refinery operations assistant. Data may be in Spanish or English — respond in the same language as the user. Be concise and technical.\n\nPLANT HISTORY:\n${ctx}`,messages:[{role:'user',content:question}]})});
+    const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({system:`You are an expert refinery operations assistant. Data may be in Spanish or English — respond in the same language as the user. Be concise and technical.\n\nPLANT HISTORY:\n${ctx}`,question})});
     const data=await res.json();chat.removeChild(thinking);addMsg(data.content?.[0]?.text||'Sin respuesta.','ai');
   }catch(err){chat.removeChild(thinking);addMsg('Error al conectar con el asistente.','ai');}
 };
