@@ -581,8 +581,8 @@ function buildGanttHTML(tasks,eventStartDate,editMode,eventId) {
     ?`<th class="gantt-task-col" style="background:var(--bg);border-bottom:1px solid var(--border)"></th><th class="gantt-resp-col" style="background:var(--bg);border-bottom:1px solid var(--border)"></th><th class="gantt-action-col" style="background:var(--bg);border-bottom:1px solid var(--border)"></th>`
     :`<th class="gantt-task-col" style="background:var(--bg);border-bottom:1px solid var(--border)"></th><th class="gantt-resp-col" style="background:var(--bg);border-bottom:1px solid var(--border)"></th>`;
   const fh2=editMode
-    ?`<th class="gantt-task-col" style="background:var(--bg);font-size:11px;font-weight:500;color:var(--text-muted);text-align:left;padding:4px 8px;border-bottom:1px solid var(--border)">Actividad</th><th class="gantt-resp-col" style="background:var(--bg);font-size:11px;color:var(--text-muted);border-bottom:1px solid var(--border)">Responsable</th><th class="gantt-action-col" style="background:var(--bg);border-bottom:1px solid var(--border)"></th>`
-    :`<th class="gantt-task-col" style="background:var(--bg);font-size:11px;font-weight:500;color:var(--text-muted);text-align:left;padding:4px 8px;border-bottom:1px solid var(--border)">Actividad</th><th class="gantt-resp-col" style="background:var(--bg);font-size:11px;color:var(--text-muted);border-bottom:1px solid var(--border)">Responsable</th>`;
+    ?`<th class="gantt-task-col" style="background:var(--bg);font-size:11px;font-weight:500;color:var(--text-muted);text-align:left;padding:4px 8px;border-bottom:1px solid var(--border)">Actividad</th><th class="gantt-resp-col" style="background:var(--bg);font-size:11px;color:var(--text-muted);border-bottom:1px solid var(--border)">Inicio — Fin</th><th class="gantt-action-col" style="background:var(--bg);border-bottom:1px solid var(--border)"></th>`
+    :`<th class="gantt-task-col" style="background:var(--bg);font-size:11px;font-weight:500;color:var(--text-muted);text-align:left;padding:4px 8px;border-bottom:1px solid var(--border)">Actividad</th><th class="gantt-resp-col" style="background:var(--bg);font-size:11px;color:var(--text-muted);border-bottom:1px solid var(--border)">Inicio — Fin</th>`;
   let html=`<div class="gantt-wrap"><table class="gantt-table"><thead><tr>${fh}`;
   monthSpans.forEach(ms=>{html+=`<th class="gantt-hdr-month" colspan="${ms.span}">${ms.label}</th>`;});
   html+=`</tr><tr>${fh2}`;
@@ -590,8 +590,10 @@ function buildGanttHTML(tasks,eventStartDate,editMode,eventId) {
   html+=`</tr></thead><tbody>`;
   tasks.forEach(t=>{
     const tStart=parseDate(t.startDate);const color=GANTT_COLORS[t.color%GANTT_COLORS.length]||'#378ADD';
-    if(editMode){html+=`<tr class="task-row" id="task-row-${t.id}"><td class="gantt-task-col" style="font-size:12px">${t.name}</td><td class="gantt-resp-col">${t.resp||'—'}</td><td class="gantt-action-col"><div style="display:flex;gap:4px"><button class="btn-edit" onclick="startEditTask('${t.id}','${eventId}')"><i class="ti ti-pencil" style="font-size:12px"></i></button><button class="btn-danger" onclick="deleteTask('${t.id}','${eventId}')"><i class="ti ti-trash" style="font-size:12px"></i></button></div></td>`;}
-    else{html+=`<tr class="task-row"><td class="gantt-task-col" style="font-size:12px">${t.name}</td><td class="gantt-resp-col">${t.resp||'—'}</td>`;}
+    const tEnd=dateStr(addDays(parseDate(t.startDate),t.dur));
+    const tDateRange=`${t.startDate.slice(5).replace('-','/')} — ${tEnd.slice(5).replace('-','/')}`;
+    if(editMode){html+=`<tr class="task-row" id="task-row-${t.id}"><td class="gantt-task-col" style="font-size:12px">${t.name}</td><td class="gantt-resp-col" style="font-size:11px">${tDateRange}</td><td class="gantt-action-col"><div style="display:flex;gap:4px"><button class="btn-edit" onclick="startEditTask('${t.id}','${eventId}')"><i class="ti ti-pencil" style="font-size:12px"></i></button><button class="btn-danger" onclick="deleteTask('${t.id}','${eventId}')"><i class="ti ti-trash" style="font-size:12px"></i></button></div></td>`;}
+    else{html+=`<tr class="task-row"><td class="gantt-task-col" style="font-size:12px">${t.name}</td><td class="gantt-resp-col" style="font-size:11px">${tDateRange}</td>`;}
     days.forEach(d=>{const dEnd=addDays(tStart,t.dur);const inBar=d>=tStart&&d<dEnd;const iF=d.getTime()===tStart.getTime();const iL=d.getTime()===addDays(tStart,t.dur-1).getTime();html+=`<td class="gantt-day-col">${inBar?`<div style="height:18px;background:${color};opacity:0.85;border-radius:${iF?'4px':'0'} ${iL?'4px':'0'} ${iL?'4px':'0'} ${iF?'4px':'0'};margin:0 1px"></div>`:'&nbsp;'}</td>`;});
     html+='</tr>';
   });
@@ -646,7 +648,7 @@ window.exportGanttPDF = function(eventId) {
     <thead>
       <tr>
         <th style="width:160px;min-width:160px;text-align:left;padding:4px 6px;background:#f0f4f8;border:1px solid #ccc;font-size:10px">Actividad</th>
-        <th style="width:90px;min-width:90px;text-align:left;padding:4px 6px;background:#f0f4f8;border:1px solid #ccc;font-size:10px">Responsable</th>
+        <th style="width:90px;min-width:90px;text-align:left;padding:4px 6px;background:#f0f4f8;border:1px solid #ccc;font-size:10px">Inicio — Fin</th>
         ${monthSpans.map(ms => `<th colspan="${ms.span}" style="text-align:left;padding:3px 6px;background:#E6F1FB;border:1px solid #ccc;color:#185FA5;font-size:10px">${ms.label}</th>`).join('')}
       </tr>
       <tr>
@@ -669,7 +671,7 @@ window.exportGanttPDF = function(eventId) {
     const bg = ti % 2 === 0 ? '#ffffff' : '#f9fafb';
     tableHTML += `<tr style="background:${bg}">
       <td style="padding:3px 5px;border:1px solid #e5e7eb;font-size:10px;word-break:break-word">${t.name || ''}</td>
-      <td style="padding:3px 5px;border:1px solid #e5e7eb;font-size:9px;color:#6b7280">${t.resp || '-'}</td>
+      <td style="padding:3px 5px;border:1px solid #e5e7eb;font-size:9px;color:#185FA5;white-space:nowrap">${t.startDate ? t.startDate.slice(5).replace('-','/') + ' — ' + dateStr(addDays(parseDate(t.startDate),t.dur)).slice(5).replace('-','/') : '-'}</td>
       ${days.map(d => {
         const dEnd = addDays(tStart, t.dur);
         const inBar = d >= tStart && d < dEnd;
