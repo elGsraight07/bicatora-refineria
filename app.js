@@ -30,9 +30,6 @@ const app     = initializeApp(firebaseConfig);
 const db      = getFirestore(app);
 const storage = getStorage(app);
 
-// Boot immediately
-subscribeToEvents();
-renderAIChips();
 
 // ─── Firestore listener ───────────────────────────────────────────────────────
 function subscribeToEvents() {
@@ -613,3 +610,7 @@ window.askAI=async function(question){
     const data=await res.json();chat.removeChild(thinking);addMsg(data.content?.[0]?.text||'Sin respuesta.','ai');
   }catch(err){chat.removeChild(thinking);addMsg('Error al conectar con el asistente.','ai');}
 };
+
+// Boot
+subscribeToEvents();
+renderAIChips();
