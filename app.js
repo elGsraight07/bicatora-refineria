@@ -613,154 +613,106 @@ function addPdfFooter(doc) {
   for(let i=1;i<=pc;i++){doc.setPage(i);doc.setDrawColor(210,210,210);doc.setLineWidth(0.2);doc.line(10,pgH-9,pgW-10,pgH-9);doc.setTextColor(160,160,160);doc.setFontSize(7);doc.setFont('helvetica','normal');doc.text(ds,10,pgH-5);doc.text(`${i} / ${pc}`,pgW-10,pgH-5,{align:'right'});}
 }
 
-// ─── Export Gantt PDF ──────────────────────────────────────────────────────────
+// ─── Export Gantt PDF (print-based, no encoding issues) ──────────────────────
 window.exportGanttPDF = function(eventId) {
-  const{jsPDF}=window.jspdf||{};
-  if(!jsPDF){showToast('Error: jsPDF no disponible');return;}
-  const id=eventId||(document.getElementById('gantt-event-select')||{}).value;
-  const ev=events.find(e=>e.id===id);
-  if(!ev||!ev.gantt||!ev.gantt.length){showToast('Sin tareas para exportar');return;}
+  const id = eventId || (document.getElementById('gantt-event-select')||{}).value;
+  const ev = events.find(e => e.id === id);
+  if (!ev || !ev.gantt || !ev.gantt.length) { showToast('Sin tareas para exportar'); return; }
 
-  const tasks=ev.gantt.filter(t=>t.startDate&&t.dur);
-  if(!tasks.length){showToast('Las tareas no tienen fechas válidas');return;}
+  const tasks = ev.gantt.filter(t => t.startDate && t.dur);
+  if (!tasks.length) { showToast('Las tareas no tienen fechas validas'); return; }
 
-  try {
-    const starts=tasks.map(t=>parseDate(t.startDate));
-    const ends=tasks.map(t=>addDays(parseDate(t.startDate),t.dur));
-    const minDate=new Date(Math.min(...starts));
-    const maxDate=new Date(Math.max(...ends));
-    const totalDays=Math.ceil((maxDate-minDate)/86400000)+1;
-    const days=Array.from({length:totalDays},(_,i)=>addDays(minDate,i));
+  const starts = tasks.map(t => parseDate(t.startDate));
+  const ends   = tasks.map(t => addDays(parseDate(t.startDate), t.dur));
+  const minDate = new Date(Math.min(...starts));
+  const maxDate = new Date(Math.max(...ends));
+  const totalDays = Math.ceil((maxDate - minDate) / 86400000) + 1;
+  const days = Array.from({length: totalDays}, (_, i) => addDays(minDate, i));
 
-    // Always use landscape for Gantt
-    const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
-    const pgW=doc.internal.pageSize.getWidth();
-    const pgH=doc.internal.pageSize.getHeight();
+  const monthSpans = []; let curM = null;
+  days.forEach(d => {
+    const key = `${d.getFullYear()}-${d.getMonth()}`;
+    if (curM && curM.key === key) { curM.span++; }
+    else { curM = {key, label: `${MONTHS_ES[d.getMonth()]} ${d.getFullYear()}`, span: 1}; monthSpans.push(curM); }
+  });
 
-    // Title — sanitize text to avoid jsPDF encoding errors
-    function safeTxt(s){ return (s||'').replace(/[\u0080-\uFFFF]/g, c => {
-      const map={'á':'a','é':'e','í':'i','ó':'o','ú':'u','ñ':'n','ü':'u',
-                 'Á':'A','É':'E','Í':'I','Ó':'O','Ú':'U','Ñ':'N','Ü':'U'};
-      return map[c]||'';
-    }); }
-    doc.setTextColor(20,20,20);doc.setFontSize(11);doc.setFont('helvetica','bold');
-    doc.text(safeTxt(ev.title).substring(0,90),10,12);
-    doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(90,90,90);
-    const infoLine=[TYPE_LABELS[ev.type]||'',ev.equipment||'',ev.responsible||'',ev.duration?ev.duration+' dias':''].filter(Boolean).join('  -  ');
-    doc.text(safeTxt(infoLine),10,18);
-    doc.setDrawColor(200,200,200);doc.setLineWidth(0.3);doc.line(10,21,pgW-10,21);
+  const today = new Date(); today.setHours(0,0,0,0);
+  const COLORS = ['#378ADD','#1D9E75','#EF9F27','#7F77DD','#E24B4A','#0F6E56','#854F0B','#534AB7'];
 
-    // Calculate column widths
-    const taskColW=55;
-    const respColW=30;
-    const availW=pgW-taskColW-respColW-15;
-    const dayW=Math.max(3,Math.min(8,Math.floor(availW/totalDays)));
-    const rowH=7;const headerH=10;const startX=5;let startY=25;
+  // Build Gantt table HTML
+  const dayW = Math.max(20, Math.min(36, Math.floor(700 / totalDays)));
 
-    // Month spans
-    const monthSpans=[];let curM=null;
-    days.forEach(d=>{
-      const key=`${d.getFullYear()}-${d.getMonth()}`;
-      if(curM&&curM.key===key){curM.span++;}
-      else{curM={key,label:`${MONTHS_ES[d.getMonth()]} ${d.getFullYear()}`,span:1};monthSpans.push(curM);}
-    });
+  let tableHTML = `<table style="border-collapse:collapse;font-size:11px;width:100%">
+    <thead>
+      <tr>
+        <th style="width:180px;min-width:180px;text-align:left;padding:4px 6px;background:#f0f4f8;border:1px solid #ccc">Actividad</th>
+        <th style="width:110px;min-width:110px;text-align:left;padding:4px 6px;background:#f0f4f8;border:1px solid #ccc">Responsable</th>
+        ${monthSpans.map(ms => `<th colspan="${ms.span}" style="text-align:left;padding:3px 6px;background:#E6F1FB;border:1px solid #ccc;color:#185FA5;font-size:10px">${ms.label}</th>`).join('')}
+      </tr>
+      <tr>
+        <th style="background:#f0f4f8;border:1px solid #ccc"></th>
+        <th style="background:#f0f4f8;border:1px solid #ccc"></th>
+        ${days.map(d => {
+          const dow = d.getDay();
+          const isT = d.getTime() === today.getTime();
+          const bg = isT ? '#dbeafe' : (dow===0||dow===6 ? '#fef2f2' : '#f8fafc');
+          const color = isT ? '#185FA5' : (dow===0||dow===6 ? '#dc2626' : '#6b7280');
+          return `<th style="min-width:${dayW}px;max-width:${dayW}px;text-align:center;padding:2px 1px;background:${bg};border:1px solid #ccc;font-size:9px;color:${color}">${d.getDate()}</th>`;
+        }).join('')}
+      </tr>
+    </thead>
+    <tbody>`;
 
-    // Header row 1 - months
-    doc.setFillColor(230,241,251);
-    doc.rect(startX,startY,taskColW+respColW+totalDays*dayW,headerH/2,'F');
-    doc.setFontSize(7);doc.setTextColor(24,95,165);doc.setFont('helvetica','bold');
-    let mX=startX+taskColW+respColW;
-    monthSpans.forEach(ms=>{
-      if(mX+2<startX+taskColW+respColW+totalDays*dayW)
-        doc.text(safeTxt(ms.label.substring(0,12)),mX+2,startY+4);
-      mX+=ms.span*dayW;
-    });
+  tasks.forEach((t, ti) => {
+    const tStart = parseDate(t.startDate);
+    const color = COLORS[t.color % COLORS.length] || '#378ADD';
+    const bg = ti % 2 === 0 ? '#ffffff' : '#f9fafb';
+    tableHTML += `<tr style="background:${bg}">
+      <td style="padding:4px 6px;border:1px solid #e5e7eb;font-size:11px">${t.name || ''}</td>
+      <td style="padding:4px 6px;border:1px solid #e5e7eb;font-size:10px;color:#6b7280">${t.resp || '—'}</td>
+      ${days.map(d => {
+        const dEnd = addDays(tStart, t.dur);
+        const inBar = d >= tStart && d < dEnd;
+        const iF = d.getTime() === tStart.getTime();
+        const iL = d.getTime() === addDays(tStart, t.dur - 1).getTime();
+        const br = `${iF?'4px':'0'} ${iL?'4px':'0'} ${iL?'4px':'0'} ${iF?'4px':'0'}`;
+        return `<td style="padding:2px 1px;border:1px solid #e5e7eb;text-align:center">
+          ${inBar ? `<div style="height:16px;background:${color};border-radius:${br};margin:1px"></div>` : ''}
+        </td>`;
+      }).join('')}
+    </tr>`;
+  });
 
-    // Header row 2 - days
-    const dhY=startY+headerH/2;
-    doc.setFillColor(242,245,248);
-    doc.rect(startX,dhY,taskColW+respColW+totalDays*dayW,headerH/2,'F');
-    doc.setFontSize(6);doc.setFont('helvetica','normal');
-    days.forEach((d,i)=>{
-      const dow=d.getDay();
-      const x=startX+taskColW+respColW+i*dayW+dayW/2;
-      if(x<startX+taskColW+respColW+totalDays*dayW){
-        doc.setTextColor(dow===0||dow===6?[200,80,80]:[110,110,110]);
-        doc.text(String(d.getDate()),x,dhY+3.5,{align:'center'});
-      }
-    });
+  tableHTML += '</tbody></table>';
 
-    // Column labels
-    doc.setTextColor(90,90,90);doc.setFontSize(7);doc.setFont('helvetica','bold');
-    doc.text('Actividad',startX+2,startY+4);
-    doc.text('Responsable',startX+taskColW+2,startY+4);
+  const dateStr = new Date().toLocaleDateString('es-MX', {year:'numeric', month:'long', day:'numeric'});
+  const infoLine = [TYPE_LABELS[ev.type]||'', ev.equipment||'', ev.responsible||'', ev.duration ? ev.duration+' dias' : ''].filter(Boolean).join('  ·  ');
 
-    // Header border
-    doc.setDrawColor(190,190,190);doc.setLineWidth(0.2);
-    doc.rect(startX,startY,taskColW+respColW+totalDays*dayW,headerH,undefined);
-    doc.line(startX+taskColW,startY,startX+taskColW,startY+headerH);
-    doc.line(startX+taskColW+respColW,startY,startX+taskColW+respColW,startY+headerH);
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <title>Gantt - ${ev.title}</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 15mm; color: #1a1a1a; }
+      h2 { font-size: 14px; margin: 0 0 4px; }
+      .sub { font-size: 11px; color: #6b7280; margin-bottom: 12px; }
+      .footer { position: fixed; bottom: 8mm; left: 15mm; right: 15mm; font-size: 9px; color: #9ca3af; border-top: 0.5px solid #e5e7eb; padding-top: 4px; display: flex; justify-content: space-between; }
+      @page { size: A4 landscape; margin: 15mm; }
+      @media print { .footer { position: fixed; } }
+    </style>
+  </head><body>
+    <h2>${ev.title}</h2>
+    <div class="sub">${infoLine}</div>
+    ${tableHTML}
+    <div class="footer"><span>${dateStr}</span><span>Bitacora de Refineria</span></div>
+    <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();}}<\/script>
+  </body></html>`;
 
-    // Task rows — paginate if needed
-    let rowY=startY+headerH;
-    tasks.forEach((t,ti)=>{
-      // New page if needed
-      if(rowY+rowH>pgH-12){
-        addPdfFooter(doc);
-        doc.addPage();
-        rowY=15;
-        // Redraw column headers on new page
-        doc.setFillColor(242,245,248);doc.rect(startX,rowY-6,taskColW+respColW+totalDays*dayW,6,'F');
-        doc.setFontSize(7);doc.setFont('helvetica','bold');doc.setTextColor(90,90,90);
-        doc.text('Actividad',startX+2,rowY-2);doc.text('Responsable',startX+taskColW+2,rowY-2);
-      }
-
-      const rgb=GANTT_RGB[t.color%GANTT_RGB.length]||[55,138,221];
-      doc.setFillColor(...(ti%2===0?[255,255,255]:[249,251,253]));
-      doc.rect(startX,rowY,taskColW+respColW+totalDays*dayW,rowH,'F');
-
-      // Task name
-      doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(30,30,30);
-      const tname=(t.name||'').length>32?(t.name||'').substring(0,31)+'…':(t.name||'');
-      doc.text(tname,startX+2,rowY+rowH/2+1.5);
-
-      // Responsible
-      doc.setTextColor(100,100,100);
-      const resp=(t.resp||'—').length>18?(t.resp||'').substring(0,17)+'…':(t.resp||'—');
-      doc.text(resp,startX+taskColW+2,rowY+rowH/2+1.5);
-
-      // Gantt bars
-      const tStart=parseDate(t.startDate);
-      days.forEach((d,i)=>{
-        const bx=startX+taskColW+respColW+i*dayW;
-        if(bx>=startX+taskColW+respColW+totalDays*dayW) return;
-        if(d>=tStart&&d<addDays(tStart,t.dur)){
-          const iF=d.getTime()===tStart.getTime();
-          const iL=d.getTime()===addDays(tStart,t.dur-1).getTime();
-          doc.setFillColor(...rgb);
-          doc.roundedRect(bx+0.5,rowY+1.5,Math.max(dayW-1,1),rowH-3,iF?0.8:0,iL?0.8:0,'F');
-        }
-      });
-
-      // Row border
-      doc.setDrawColor(220,220,220);doc.setLineWidth(0.1);
-      doc.line(startX,rowY+rowH,startX+taskColW+respColW+totalDays*dayW,rowY+rowH);
-      doc.line(startX+taskColW,rowY,startX+taskColW,rowY+rowH);
-      doc.line(startX+taskColW+respColW,rowY,startX+taskColW+respColW,rowY+rowH);
-      rowY+=rowH;
-    });
-
-    // Outer border
-    doc.setDrawColor(160,160,160);doc.setLineWidth(0.3);
-    doc.rect(startX,startY,taskColW+respColW+totalDays*dayW,headerH+(rowY-startY-headerH),undefined);
-
-    addPdfFooter(doc);
-    const filename='Gantt_'+(ev.title||'evento').replace(/[^a-zA-Z0-9]/g,'_').substring(0,40)+'.pdf';
-    doc.save(filename);
-    showToast('Gantt exportado');
-  } catch(err){
-    console.error('Error exportando Gantt:',err);
-    showToast('Error al exportar: '+err.message);
+  const win = window.open('', '_blank', 'width=1200,height=800');
+  if (win) {
+    win.document.write(html);
+    win.document.close();
+    showToast('Abriendo vista de impresion...');
+  } else {
+    showToast('Permite ventanas emergentes para exportar');
   }
 };
 
