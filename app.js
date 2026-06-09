@@ -1,4 +1,3 @@
-
 // app.js — Bitácora de Refinería
 
 const TYPE_LABELS = {shutdown:'Paro de planta',repair:'Reparación',catalyst:'Catalizador',material:'Materiales',maintenance:'Mantenimiento',other:'Otro'};
@@ -89,10 +88,16 @@ function eventCardHTML(e) {
     e.files&&e.files.length?`<div class="event-chip"><i class="ti ti-paperclip" style="font-size:13px"></i> ${e.files.length} archivo${e.files.length>1?'s':''}</div>`:'',
     e.gantt&&e.gantt.length?`<div class="event-chip"><i class="ti ti-calendar-event" style="font-size:13px"></i> Gantt (${e.gantt.length} tareas)</div>`:'',
   ].filter(Boolean).join('');
-  return `<div class="event-card ${e.type}" onclick="openDetail('${e.id}')" style="border-left-color:${color}">
-    <div class="event-title">${e.title}</div>
-    <div class="event-meta">${d} · ${e.equipment||'Sin equipo'}</div>
-    <div class="event-chips">${chips}</div>
+  return `<div class="event-card ${e.type}" style="border-left-color:${color}">
+    <div onclick="openDetail('${e.id}')" style="cursor:pointer">
+      <div class="event-title">${e.title}</div>
+      <div class="event-meta">${d} · ${e.equipment||'Sin equipo'}</div>
+      <div class="event-chips">${chips}</div>
+    </div>
+    <div style="display:flex;gap:6px;margin-top:8px">
+      <button class="btn-edit btn-sm" onclick="openEditModal('${e.id}')"><i class="ti ti-pencil" style="font-size:12px"></i> Editar</button>
+      <button class="btn-danger btn-sm" onclick="deleteEvent('${e.id}','${e.title.replace(/'/g,'')}')"><i class="ti ti-trash" style="font-size:12px"></i> Eliminar</button>
+    </div>
   </div>`;
 }
 
@@ -417,6 +422,85 @@ function fileItemHTML(f,eid) {
       <i class="ti ti-x" style="font-size:14px"></i></button>
   </div>`;
 }
+
+
+// ─── Delete event ─────────────────────────────────────────────────────────────
+window.deleteEvent = async function(id, title) {
+  if (!confirm(`¿Eliminar el evento "${title}"? Esta acción no se puede deshacer.`)) return;
+  try {
+    await deleteDoc(doc(db,'events',id));
+    showToast('Evento eliminado');
+  } catch(err) { console.error(err); showToast('Error al eliminar'); }
+};
+
+// ─── Edit event modal ─────────────────────────────────────────────────────────
+window.openEditModal = function(id) {
+  const e = events.find(ev => ev.id === id);
+  if (!e) return;
+  document.getElementById('modal-root').innerHTML = `
+    <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+      <div class="modal">
+        <div class="modal-header">
+          <span class="modal-header-title">Editar evento</span>
+          <button class="btn-secondary btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button>
+        </div>
+        <div class="modal-body">
+          <div class="form-grid">
+            <div class="form-group"><label>Tipo de evento</label>
+              <select id="ef-type">
+                <option value="shutdown" ${e.type==='shutdown'?'selected':''}>Paro de planta</option>
+                <option value="repair" ${e.type==='repair'?'selected':''}>Reparación de equipo</option>
+                <option value="catalyst" ${e.type==='catalyst'?'selected':''}>Cambio de catalizador</option>
+                <option value="material" ${e.type==='material'?'selected':''}>Orden de materiales</option>
+                <option value="maintenance" ${e.type==='maintenance'?'selected':''}>Intervención / Mantenimiento</option>
+                <option value="other" ${e.type==='other'?'selected':''}>Otro evento relevante</option>
+              </select>
+            </div>
+            <div class="form-group"><label>Fecha inicio</label><input type="date" id="ef-date" value="${e.date}" /></div>
+          </div>
+          <div class="form-group"><label>Título *</label><input type="text" id="ef-title" value="${e.title}" /></div>
+          <div class="form-grid">
+            <div class="form-group"><label>Equipo / área</label><input type="text" id="ef-equipment" value="${e.equipment||''}" /></div>
+            <div class="form-group"><label>Responsable</label><input type="text" id="ef-responsible" value="${e.responsible||''}" /></div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group"><label>Duración (días)</label><input type="number" id="ef-duration" value="${e.duration||''}" min="1" /></div>
+            <div class="form-group"><label>Catalizador</label><input type="text" id="ef-catalyst" value="${e.catalyst||''}" /></div>
+          </div>
+          <div class="form-group"><label>Materiales / órdenes</label><input type="text" id="ef-materials" value="${e.materials||''}" /></div>
+          <div class="form-group"><label>Notas / observaciones</label><textarea id="ef-notes">${e.notes||''}</textarea></div>
+          <div class="form-group"><label>Etiquetas (separadas por coma)</label><input type="text" id="ef-tags" value="${(e.tags||[]).join(', ')}" /></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-danger" onclick="deleteEvent('${e.id}','${e.title.replace(/'/g,'')}');closeModal()"><i class="ti ti-trash"></i> Eliminar evento</button>
+          <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+          <button class="btn-primary" onclick="saveEditEvent('${e.id}')"><i class="ti ti-device-floppy"></i> Guardar cambios</button>
+        </div>
+      </div>
+    </div>`;
+};
+
+window.saveEditEvent = async function(id) {
+  const title = (document.getElementById('ef-title')||{}).value.trim();
+  if (!title) { alert('El título es obligatorio'); return; }
+  const updated = {
+    type:        (document.getElementById('ef-type')||{}).value,
+    date:        (document.getElementById('ef-date')||{}).value,
+    title,
+    equipment:   (document.getElementById('ef-equipment')||{}).value||'',
+    responsible: (document.getElementById('ef-responsible')||{}).value||'',
+    duration:    parseInt((document.getElementById('ef-duration')||{}).value)||null,
+    catalyst:    (document.getElementById('ef-catalyst')||{}).value||'',
+    materials:   (document.getElementById('ef-materials')||{}).value||'',
+    notes:       (document.getElementById('ef-notes')||{}).value||'',
+    tags:        ((document.getElementById('ef-tags')||{}).value||'').split(',').map(s=>s.trim()).filter(Boolean),
+  };
+  try {
+    await updateDoc(doc(db,'events',id), updated);
+    closeModal();
+    showToast('✓ Evento actualizado');
+  } catch(err) { console.error(err); showToast('Error al guardar'); }
+};
 
 // ─── Gantt tab ─────────────────────────────────────────────────────────────────
 window.populateGanttSelect = function() {
