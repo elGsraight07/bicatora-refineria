@@ -590,8 +590,9 @@ function buildGanttHTML(tasks,eventStartDate,editMode,eventId) {
   html+=`</tr></thead><tbody>`;
   tasks.forEach(t=>{
     const tStart=parseDate(t.startDate);const color=GANTT_COLORS[t.color%GANTT_COLORS.length]||'#378ADD';
-    const tEnd=dateStr(addDays(parseDate(t.startDate),t.dur));
-    const tDateRange=`${t.startDate.slice(5).replace('-','/')} — ${tEnd.slice(5).replace('-','/')}`;
+    const _tEndD=addDays(parseDate(t.startDate),t.dur);
+    const tEnd=(_tEndD.getMonth()+1).toString().padStart(2,'0')+'/'+_tEndD.getDate().toString().padStart(2,'0');
+    const tDateRange=t.startDate.slice(5).replace('-','/')+' — '+tEnd;
     if(editMode){html+=`<tr class="task-row" id="task-row-${t.id}"><td class="gantt-task-col" style="font-size:12px">${t.name}</td><td class="gantt-resp-col" style="font-size:11px">${tDateRange}</td><td class="gantt-action-col"><div style="display:flex;gap:4px"><button class="btn-edit" onclick="startEditTask('${t.id}','${eventId}')"><i class="ti ti-pencil" style="font-size:12px"></i></button><button class="btn-danger" onclick="deleteTask('${t.id}','${eventId}')"><i class="ti ti-trash" style="font-size:12px"></i></button></div></td>`;}
     else{html+=`<tr class="task-row"><td class="gantt-task-col" style="font-size:12px">${t.name}</td><td class="gantt-resp-col" style="font-size:11px">${tDateRange}</td>`;}
     days.forEach(d=>{const dEnd=addDays(tStart,t.dur);const inBar=d>=tStart&&d<dEnd;const iF=d.getTime()===tStart.getTime();const iL=d.getTime()===addDays(tStart,t.dur-1).getTime();html+=`<td class="gantt-day-col">${inBar?`<div style="height:18px;background:${color};opacity:0.85;border-radius:${iF?'4px':'0'} ${iL?'4px':'0'} ${iL?'4px':'0'} ${iF?'4px':'0'};margin:0 1px"></div>`:'&nbsp;'}</td>`;});
@@ -671,7 +672,7 @@ window.exportGanttPDF = function(eventId) {
     const bg = ti % 2 === 0 ? '#ffffff' : '#f9fafb';
     tableHTML += `<tr style="background:${bg}">
       <td style="padding:3px 5px;border:1px solid #e5e7eb;font-size:10px;word-break:break-word">${t.name || ''}</td>
-      <td style="padding:3px 5px;border:1px solid #e5e7eb;font-size:9px;color:#185FA5;white-space:nowrap">${t.startDate ? t.startDate.slice(5).replace('-','/') + ' — ' + dateStr(addDays(parseDate(t.startDate),t.dur)).slice(5).replace('-','/') : '-'}</td>
+      <td style="padding:3px 5px;border:1px solid #e5e7eb;font-size:9px;color:#185FA5;white-space:nowrap">${t.startDate ? (()=>{const s=t.startDate.slice(5).replace('-','/');const e=addDays(parseDate(t.startDate),t.dur);const ed=(e.getMonth()+1).toString().padStart(2,'0')+'/'+e.getDate().toString().padStart(2,'0');return s+' - '+ed;})() : '-'}</td>
       ${days.map(d => {
         const dEnd = addDays(tStart, t.dur);
         const inBar = d >= tStart && d < dEnd;
@@ -687,7 +688,7 @@ window.exportGanttPDF = function(eventId) {
 
   tableHTML += '</tbody></table>';
 
-  const dateStr = new Date().toLocaleDateString('es-MX', {year:'numeric', month:'long', day:'numeric'});
+  const printDate = new Date().toLocaleDateString('es-MX', {year:'numeric', month:'long', day:'numeric'});
   const infoLine = [TYPE_LABELS[ev.type]||'', ev.equipment||'', ev.responsible||'', ev.duration ? ev.duration+' dias' : ''].filter(Boolean).join('  ·  ');
 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
@@ -711,7 +712,7 @@ window.exportGanttPDF = function(eventId) {
     <h2>${ev.title}</h2>
     <div class="sub">${infoLine}</div>
     ${tableHTML}
-    <div class="footer"><span>${dateStr}</span><span>Bitacora de Refineria</span></div>
+    <div class="footer"><span>${printDate}</span><span>Bitacora de Refineria</span></div>
     <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();}}<\/script>
   </body></html>`;
 
