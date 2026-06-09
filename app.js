@@ -55,6 +55,7 @@ function showToast(msg) {
   const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'),2800);
 }
+function dateStr(d){return d.toISOString().split('T')[0];}
 function parseDate(s) { const[y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d); }
 function addDays(date,n) { const d=new Date(date); d.setDate(d.getDate()+n); return d; }
 function fmtSize(b) { return b<1024*1024?Math.round(b/1024)+' KB':(b/1024/1024).toFixed(1)+' MB'; }
@@ -298,10 +299,10 @@ function renderDetailModal(e) {
             </div>
             <div id="dt-gantt-content">${ganttHTML}</div>
             <div id="dt-add-form" style="display:none;margin-top:1rem;background:var(--bg);padding:1rem;border-radius:var(--radius-md);border:1px solid var(--border)">
-              <div style="display:grid;grid-template-columns:1fr 120px 80px 1fr auto;gap:8px;align-items:flex-end">
+              <div style="display:grid;grid-template-columns:1fr 130px 130px 1fr auto;gap:8px;align-items:flex-end">
                 <div class="form-group"><label>Actividad</label><input type="text" id="dgt-name" /></div>
                 <div class="form-group"><label>Fecha inicio</label><input type="date" id="dgt-sd" value="${e.date}" /></div>
-                <div class="form-group"><label>Días</label><input type="number" id="dgt-dur" min="1" value="3" /></div>
+                <div class="form-group"><label>Fecha fin</label><input type="date" id="dgt-ed" value="${e.date}" /></div>
                 <div class="form-group"><label>Responsable</label><input type="text" id="dgt-resp" /></div>
                 <div class="form-group form-end"><button class="btn-primary btn-sm" onclick="saveDetailTask('${e.id}')">Agregar</button></div>
               </div>
@@ -327,9 +328,13 @@ window.saveDetailTask = async function(eid) {
   const ev=events.find(e=>e.id===eid); if(!ev) return;
   const name=(document.getElementById('dgt-name')||{}).value.trim();
   const startDate=(document.getElementById('dgt-sd')||{}).value;
-  const dur=parseInt((document.getElementById('dgt-dur')||{}).value)||1;
+  const endDate=(document.getElementById('dgt-ed')||{}).value;
   const resp=(document.getElementById('dgt-resp')||{}).value.trim();
   if(!name) return;
+  if(!startDate||!endDate){alert('Indica fecha inicio y fecha fin');return;}
+  const start=parseDate(startDate), end=parseDate(endDate);
+  if(end<=start){alert('La fecha fin debe ser posterior a la fecha inicio');return;}
+  const dur=Math.ceil((end-start)/86400000);
   const gantt=[...(ev.gantt||[]),{id:'g'+Date.now(),name,startDate,dur,resp,color:(ev.gantt||[]).length%GANTT_COLORS.length}];
   await updateDoc(doc(db,'events',eid),{gantt});
   document.getElementById('dt-gantt-content').innerHTML=buildGanttHTML(gantt,ev.date,true,eid);
@@ -351,10 +356,12 @@ window.startEditTask = function(tid,eid) {
   const cells=row.querySelectorAll('td');
   cells[0].innerHTML=`<input type="text" value="${t.name}" id="edit-name-${tid}" style="font-size:12px;padding:3px 6px;width:100%" />`;
   cells[1].innerHTML=`<input type="text" value="${t.resp||''}" id="edit-resp-${tid}" style="font-size:12px;padding:3px 6px;width:100%" />`;
+  const endDateStr=dateStr(addDays(parseDate(t.startDate),t.dur));
   cells[2].innerHTML=`<div style="display:flex;flex-direction:column;gap:3px">
-    <input type="date" value="${t.startDate}" id="edit-sd-${tid}" style="font-size:11px;padding:2px 4px" />
-    <div style="display:flex;gap:3px;align-items:center"><span style="font-size:11px;color:var(--text-muted)">Días:</span>
-    <input type="number" value="${t.dur}" id="edit-dur-${tid}" min="1" style="font-size:11px;padding:2px 4px;width:52px" /></div>
+    <div style="display:flex;gap:3px;align-items:center"><span style="font-size:10px;color:var(--text-muted)">Inicio:</span>
+    <input type="date" value="${t.startDate}" id="edit-sd-${tid}" style="font-size:11px;padding:2px 4px" /></div>
+    <div style="display:flex;gap:3px;align-items:center"><span style="font-size:10px;color:var(--text-muted)">Fin:</span>
+    <input type="date" value="${endDateStr}" id="edit-ed-${tid}" style="font-size:11px;padding:2px 4px" /></div>
     <div style="display:flex;gap:3px">
       <button class="btn-primary" style="padding:2px 8px;font-size:11px" onclick="saveEditTask('${tid}','${eid}')"><i class="ti ti-check"></i></button>
       <button class="btn-secondary" style="padding:2px 8px;font-size:11px" onclick="cancelEdit('${tid}','${eid}')"><i class="ti ti-x"></i></button>
@@ -365,8 +372,13 @@ window.saveEditTask = async function(tid,eid) {
   const t=(ev.gantt||[]).find(g=>g.id===tid); if(!t) return;
   t.name=(document.getElementById('edit-name-'+tid)||{}).value||t.name;
   t.resp=(document.getElementById('edit-resp-'+tid)||{}).value||'';
-  t.startDate=(document.getElementById('edit-sd-'+tid)||{}).value||t.startDate;
-  t.dur=parseInt((document.getElementById('edit-dur-'+tid)||{}).value)||t.dur;
+  const newStart=(document.getElementById('edit-sd-'+tid)||{}).value||t.startDate;
+  const newEnd=(document.getElementById('edit-ed-'+tid)||{}).value;
+  t.startDate=newStart;
+  if(newEnd){
+    const s=parseDate(newStart), e=parseDate(newEnd);
+    if(e>s) t.dur=Math.ceil((e-s)/86400000);
+  }
   await updateDoc(doc(db,'events',eid),{gantt:ev.gantt});
   const dtc=document.getElementById('dt-gantt-content');
   if(dtc)dtc.innerHTML=buildGanttHTML(ev.gantt,ev.date,true,eid); else loadGanttTab();
@@ -539,9 +551,13 @@ window.saveGanttTask = async function() {
   const ev=events.find(e=>e.id===id); if(!ev) return;
   const name=(document.getElementById('gt-name')||{}).value.trim();
   const startDate=(document.getElementById('gt-start-date')||{}).value;
-  const dur=parseInt((document.getElementById('gt-dur')||{}).value)||1;
+  const endDate=(document.getElementById('gt-end-date')||{}).value;
   const resp=(document.getElementById('gt-resp')||{}).value.trim();
   if(!name){alert('Escribe el nombre de la actividad');return;}
+  if(!startDate||!endDate){alert('Indica fecha de inicio y fecha fin');return;}
+  const start=parseDate(startDate), end=parseDate(endDate);
+  if(end<=start){alert('La fecha fin debe ser posterior a la fecha inicio');return;}
+  const dur=Math.ceil((end-start)/86400000);
   const gantt=[...(ev.gantt||[]),{id:'g'+Date.now(),name,startDate,dur,resp,color:(ev.gantt||[]).length%GANTT_COLORS.length}];
   await updateDoc(doc(db,'events',id),{gantt});
   document.getElementById('gt-name').value='';
@@ -592,43 +608,147 @@ function addPdfFooter(doc) {
 // ─── Export Gantt PDF ──────────────────────────────────────────────────────────
 window.exportGanttPDF = function(eventId) {
   const{jsPDF}=window.jspdf||{};
+  if(!jsPDF){showToast('Error: jsPDF no disponible');return;}
   const id=eventId||(document.getElementById('gantt-event-select')||{}).value;
   const ev=events.find(e=>e.id===id);
   if(!ev||!ev.gantt||!ev.gantt.length){showToast('Sin tareas para exportar');return;}
-  const tasks=ev.gantt;
-  const starts=tasks.map(t=>parseDate(t.startDate)),ends=tasks.map(t=>addDays(parseDate(t.startDate),t.dur));
-  const minDate=new Date(Math.min(...starts)),maxDate=new Date(Math.max(...ends));
-  const totalDays=Math.ceil((maxDate-minDate)/86400000)+1;
-  const days=Array.from({length:totalDays},(_,i)=>addDays(minDate,i));
-  const doc=new jsPDF({orientation:totalDays>25?'landscape':'portrait',unit:'mm',format:'a4'});
-  const pgW=doc.internal.pageSize.getWidth();
-  doc.setTextColor(20,20,20);doc.setFontSize(12);doc.setFont('helvetica','bold');doc.text(ev.title.substring(0,80),10,14);
-  doc.setFontSize(8.5);doc.setFont('helvetica','normal');doc.setTextColor(90,90,90);
-  doc.text([TYPE_LABELS[ev.type],ev.equipment,ev.responsible,ev.duration?`${ev.duration} días`:''].filter(Boolean).join('  ·  '),10,20);
-  doc.setDrawColor(200,200,200);doc.setLineWidth(0.3);doc.line(10,23,pgW-10,23);
-  const tCW=50,rCW=28,dW=Math.min(8,Math.floor((pgW-tCW-rCW-10)/totalDays)),rH=7,hH=10,sX=5;let sY=27;
-  const mSpans=[];let cM=null;
-  days.forEach(d=>{const k=`${d.getFullYear()}-${d.getMonth()}`;if(cM&&cM.key===k){cM.span++;}else{cM={key:k,label:`${MONTHS_ES[d.getMonth()]} ${d.getFullYear()}`,span:1};mSpans.push(cM);}});
-  doc.setFillColor(230,241,251);doc.rect(sX,sY,tCW+rCW+totalDays*dW,hH/2,'F');
-  doc.setFontSize(7);doc.setTextColor(24,95,165);doc.setFont('helvetica','bold');
-  let mX=sX+tCW+rCW;mSpans.forEach(ms=>{doc.text(ms.label,mX+2,sY+4);mX+=ms.span*dW;});
-  const dhY=sY+hH/2;doc.setFillColor(242,245,248);doc.rect(sX,dhY,tCW+rCW+totalDays*dW,hH/2,'F');
-  doc.setFontSize(6);doc.setFont('helvetica','normal');
-  days.forEach((d,i)=>{const dow=d.getDay();doc.setTextColor(dow===0||dow===6?[200,80,80]:[110,110,110]);doc.text(String(d.getDate()),sX+tCW+rCW+i*dW+dW/2,dhY+3.5,{align:'center'});});
-  doc.setTextColor(90,90,90);doc.setFontSize(7);doc.setFont('helvetica','bold');doc.text('Actividad',sX+2,sY+4);doc.text('Responsable',sX+tCW+2,sY+4);
-  doc.setDrawColor(190,190,190);doc.setLineWidth(0.2);doc.rect(sX,sY,tCW+rCW+totalDays*dW,hH,undefined);doc.line(sX+tCW,sY,sX+tCW,sY+hH);doc.line(sX+tCW+rCW,sY,sX+tCW+rCW,sY+hH);
-  let rY=sY+hH;
-  tasks.forEach((t,ti)=>{
-    const rgb=GANTT_RGB[t.color%GANTT_RGB.length]||[55,138,221];
-    doc.setFillColor(...(ti%2===0?[255,255,255]:[249,251,253]));doc.rect(sX,rY,tCW+rCW+totalDays*dW,rH,'F');
-    doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(30,30,30);doc.text((t.name.length>28?t.name.substring(0,27)+'…':t.name),sX+2,rY+rH/2+1.5);
-    doc.setTextColor(100,100,100);doc.text(((t.resp||'—').length>16?(t.resp||'').substring(0,15)+'…':(t.resp||'—')),sX+tCW+2,rY+rH/2+1.5);
-    const tS=parseDate(t.startDate);
-    days.forEach((d,i)=>{if(d>=tS&&d<addDays(tS,t.dur)){const iF=d.getTime()===tS.getTime(),iL=d.getTime()===addDays(tS,t.dur-1).getTime();const bx=sX+tCW+rCW+i*dW;doc.setFillColor(...rgb);doc.roundedRect(bx+0.8,rY+1.5,dW-1.6,rH-3,iF?1:0,iL?1:0,'F');}});
-    doc.setDrawColor(220,220,220);doc.setLineWidth(0.1);doc.line(sX,rY+rH,sX+tCW+rCW+totalDays*dW,rY+rH);doc.line(sX+tCW,rY,sX+tCW,rY+rH);doc.line(sX+tCW+rCW,rY,sX+tCW+rCW,rY+rH);rY+=rH;
-  });
-  doc.setDrawColor(160,160,160);doc.setLineWidth(0.3);doc.rect(sX,sY,tCW+rCW+totalDays*dW,hH+tasks.length*rH,undefined);
-  addPdfFooter(doc);doc.save(`Gantt_${ev.title.replace(/[^a-zA-Z0-9]/g,'_').substring(0,40)}.pdf`);showToast('Gantt exportado');
+
+  const tasks=ev.gantt.filter(t=>t.startDate&&t.dur);
+  if(!tasks.length){showToast('Las tareas no tienen fechas válidas');return;}
+
+  try {
+    const starts=tasks.map(t=>parseDate(t.startDate));
+    const ends=tasks.map(t=>addDays(parseDate(t.startDate),t.dur));
+    const minDate=new Date(Math.min(...starts));
+    const maxDate=new Date(Math.max(...ends));
+    const totalDays=Math.ceil((maxDate-minDate)/86400000)+1;
+    const days=Array.from({length:totalDays},(_,i)=>addDays(minDate,i));
+
+    // Always use landscape for Gantt
+    const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+    const pgW=doc.internal.pageSize.getWidth();
+    const pgH=doc.internal.pageSize.getHeight();
+
+    // Title
+    doc.setTextColor(20,20,20);doc.setFontSize(11);doc.setFont('helvetica','bold');
+    doc.text((ev.title||'').substring(0,90),10,12);
+    doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(90,90,90);
+    const infoLine=[TYPE_LABELS[ev.type]||'',ev.equipment||'',ev.responsible||'',ev.duration?`${ev.duration} días`:''].filter(Boolean).join('  ·  ');
+    doc.text(infoLine,10,18);
+    doc.setDrawColor(200,200,200);doc.setLineWidth(0.3);doc.line(10,21,pgW-10,21);
+
+    // Calculate column widths
+    const taskColW=55;
+    const respColW=30;
+    const availW=pgW-taskColW-respColW-15;
+    const dayW=Math.max(3,Math.min(8,Math.floor(availW/totalDays)));
+    const rowH=7;const headerH=10;const startX=5;let startY=25;
+
+    // Month spans
+    const monthSpans=[];let curM=null;
+    days.forEach(d=>{
+      const key=`${d.getFullYear()}-${d.getMonth()}`;
+      if(curM&&curM.key===key){curM.span++;}
+      else{curM={key,label:`${MONTHS_ES[d.getMonth()]} ${d.getFullYear()}`,span:1};monthSpans.push(curM);}
+    });
+
+    // Header row 1 - months
+    doc.setFillColor(230,241,251);
+    doc.rect(startX,startY,taskColW+respColW+totalDays*dayW,headerH/2,'F');
+    doc.setFontSize(7);doc.setTextColor(24,95,165);doc.setFont('helvetica','bold');
+    let mX=startX+taskColW+respColW;
+    monthSpans.forEach(ms=>{
+      if(mX+2<startX+taskColW+respColW+totalDays*dayW)
+        doc.text(ms.label.substring(0,12),mX+2,startY+4);
+      mX+=ms.span*dayW;
+    });
+
+    // Header row 2 - days
+    const dhY=startY+headerH/2;
+    doc.setFillColor(242,245,248);
+    doc.rect(startX,dhY,taskColW+respColW+totalDays*dayW,headerH/2,'F');
+    doc.setFontSize(6);doc.setFont('helvetica','normal');
+    days.forEach((d,i)=>{
+      const dow=d.getDay();
+      const x=startX+taskColW+respColW+i*dayW+dayW/2;
+      if(x<startX+taskColW+respColW+totalDays*dayW){
+        doc.setTextColor(dow===0||dow===6?[200,80,80]:[110,110,110]);
+        doc.text(String(d.getDate()),x,dhY+3.5,{align:'center'});
+      }
+    });
+
+    // Column labels
+    doc.setTextColor(90,90,90);doc.setFontSize(7);doc.setFont('helvetica','bold');
+    doc.text('Actividad',startX+2,startY+4);
+    doc.text('Responsable',startX+taskColW+2,startY+4);
+
+    // Header border
+    doc.setDrawColor(190,190,190);doc.setLineWidth(0.2);
+    doc.rect(startX,startY,taskColW+respColW+totalDays*dayW,headerH,undefined);
+    doc.line(startX+taskColW,startY,startX+taskColW,startY+headerH);
+    doc.line(startX+taskColW+respColW,startY,startX+taskColW+respColW,startY+headerH);
+
+    // Task rows — paginate if needed
+    let rowY=startY+headerH;
+    tasks.forEach((t,ti)=>{
+      // New page if needed
+      if(rowY+rowH>pgH-12){
+        addPdfFooter(doc);
+        doc.addPage();
+        rowY=15;
+        // Redraw column headers on new page
+        doc.setFillColor(242,245,248);doc.rect(startX,rowY-6,taskColW+respColW+totalDays*dayW,6,'F');
+        doc.setFontSize(7);doc.setFont('helvetica','bold');doc.setTextColor(90,90,90);
+        doc.text('Actividad',startX+2,rowY-2);doc.text('Responsable',startX+taskColW+2,rowY-2);
+      }
+
+      const rgb=GANTT_RGB[t.color%GANTT_RGB.length]||[55,138,221];
+      doc.setFillColor(...(ti%2===0?[255,255,255]:[249,251,253]));
+      doc.rect(startX,rowY,taskColW+respColW+totalDays*dayW,rowH,'F');
+
+      // Task name
+      doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(30,30,30);
+      const tname=(t.name||'').length>32?(t.name||'').substring(0,31)+'…':(t.name||'');
+      doc.text(tname,startX+2,rowY+rowH/2+1.5);
+
+      // Responsible
+      doc.setTextColor(100,100,100);
+      const resp=(t.resp||'—').length>18?(t.resp||'').substring(0,17)+'…':(t.resp||'—');
+      doc.text(resp,startX+taskColW+2,rowY+rowH/2+1.5);
+
+      // Gantt bars
+      const tStart=parseDate(t.startDate);
+      days.forEach((d,i)=>{
+        const bx=startX+taskColW+respColW+i*dayW;
+        if(bx>=startX+taskColW+respColW+totalDays*dayW) return;
+        if(d>=tStart&&d<addDays(tStart,t.dur)){
+          const iF=d.getTime()===tStart.getTime();
+          const iL=d.getTime()===addDays(tStart,t.dur-1).getTime();
+          doc.setFillColor(...rgb);
+          doc.roundedRect(bx+0.5,rowY+1.5,Math.max(dayW-1,1),rowH-3,iF?0.8:0,iL?0.8:0,'F');
+        }
+      });
+
+      // Row border
+      doc.setDrawColor(220,220,220);doc.setLineWidth(0.1);
+      doc.line(startX,rowY+rowH,startX+taskColW+respColW+totalDays*dayW,rowY+rowH);
+      doc.line(startX+taskColW,rowY,startX+taskColW,rowY+rowH);
+      doc.line(startX+taskColW+respColW,rowY,startX+taskColW+respColW,rowY+rowH);
+      rowY+=rowH;
+    });
+
+    // Outer border
+    doc.setDrawColor(160,160,160);doc.setLineWidth(0.3);
+    doc.rect(startX,startY,taskColW+respColW+totalDays*dayW,headerH+(rowY-startY-headerH),undefined);
+
+    addPdfFooter(doc);
+    const filename='Gantt_'+(ev.title||'evento').replace(/[^a-zA-Z0-9]/g,'_').substring(0,40)+'.pdf';
+    doc.save(filename);
+    showToast('Gantt exportado');
+  } catch(err){
+    console.error('Error exportando Gantt:',err);
+    showToast('Error al exportar: '+err.message);
+  }
 };
 
 // ─── Export All Events PDF ─────────────────────────────────────────────────────
