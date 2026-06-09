@@ -640,13 +640,13 @@ window.exportGanttPDF = function(eventId) {
   const COLORS = ['#378ADD','#1D9E75','#EF9F27','#7F77DD','#E24B4A','#0F6E56','#854F0B','#534AB7'];
 
   // Build Gantt table HTML
-  const dayW = Math.max(20, Math.min(36, Math.floor(700 / totalDays)));
+  const dayW = Math.max(14, Math.min(28, Math.floor(600 / totalDays)));
 
   let tableHTML = `<table style="border-collapse:collapse;font-size:11px;width:100%">
     <thead>
       <tr>
-        <th style="width:180px;min-width:180px;text-align:left;padding:4px 6px;background:#f0f4f8;border:1px solid #ccc">Actividad</th>
-        <th style="width:110px;min-width:110px;text-align:left;padding:4px 6px;background:#f0f4f8;border:1px solid #ccc">Responsable</th>
+        <th style="width:160px;min-width:160px;text-align:left;padding:4px 6px;background:#f0f4f8;border:1px solid #ccc;font-size:10px">Actividad</th>
+        <th style="width:90px;min-width:90px;text-align:left;padding:4px 6px;background:#f0f4f8;border:1px solid #ccc;font-size:10px">Responsable</th>
         ${monthSpans.map(ms => `<th colspan="${ms.span}" style="text-align:left;padding:3px 6px;background:#E6F1FB;border:1px solid #ccc;color:#185FA5;font-size:10px">${ms.label}</th>`).join('')}
       </tr>
       <tr>
@@ -668,16 +668,16 @@ window.exportGanttPDF = function(eventId) {
     const color = COLORS[t.color % COLORS.length] || '#378ADD';
     const bg = ti % 2 === 0 ? '#ffffff' : '#f9fafb';
     tableHTML += `<tr style="background:${bg}">
-      <td style="padding:4px 6px;border:1px solid #e5e7eb;font-size:11px">${t.name || ''}</td>
-      <td style="padding:4px 6px;border:1px solid #e5e7eb;font-size:10px;color:#6b7280">${t.resp || '—'}</td>
+      <td style="padding:3px 5px;border:1px solid #e5e7eb;font-size:10px;word-break:break-word">${t.name || ''}</td>
+      <td style="padding:3px 5px;border:1px solid #e5e7eb;font-size:9px;color:#6b7280">${t.resp || '-'}</td>
       ${days.map(d => {
         const dEnd = addDays(tStart, t.dur);
         const inBar = d >= tStart && d < dEnd;
         const iF = d.getTime() === tStart.getTime();
         const iL = d.getTime() === addDays(tStart, t.dur - 1).getTime();
         const br = `${iF?'4px':'0'} ${iL?'4px':'0'} ${iL?'4px':'0'} ${iF?'4px':'0'}`;
-        return `<td style="padding:2px 1px;border:1px solid #e5e7eb;text-align:center">
-          ${inBar ? `<div style="height:16px;background:${color};border-radius:${br};margin:1px"></div>` : ''}
+        return `<td style="padding:0;border:1px solid #e5e7eb;vertical-align:middle">
+          ${inBar ? `<div class="bar" style="background:${color} !important;border-radius:${br}"></div>` : ''}
         </td>`;
       }).join('')}
     </tr>`;
@@ -691,12 +691,19 @@ window.exportGanttPDF = function(eventId) {
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
     <title>Gantt - ${ev.title}</title>
     <style>
-      body { font-family: Arial, sans-serif; margin: 15mm; color: #1a1a1a; }
-      h2 { font-size: 14px; margin: 0 0 4px; }
-      .sub { font-size: 11px; color: #6b7280; margin-bottom: 12px; }
-      .footer { position: fixed; bottom: 8mm; left: 15mm; right: 15mm; font-size: 9px; color: #9ca3af; border-top: 0.5px solid #e5e7eb; padding-top: 4px; display: flex; justify-content: space-between; }
-      @page { size: A4 landscape; margin: 15mm; }
-      @media print { .footer { position: fixed; } }
+      * { box-sizing: border-box; }
+      body { font-family: Arial, sans-serif; margin: 0; padding: 10mm 12mm; color: #1a1a1a; }
+      h2 { font-size: 13px; margin: 0 0 3px; }
+      .sub { font-size: 10px; color: #6b7280; margin-bottom: 10px; }
+      table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+      td, th { border: 1px solid #d1d5db; padding: 0; overflow: hidden; }
+      .bar { height: 14px; margin: 2px 1px; border-radius: 3px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .footer { margin-top: 8px; font-size: 8px; color: #9ca3af; border-top: 0.5px solid #e5e7eb; padding-top: 3px; display: flex; justify-content: space-between; }
+      @page { size: A4 landscape; margin: 8mm; }
+      @media print {
+        body { padding: 0; }
+        .bar { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+      }
     </style>
   </head><body>
     <h2>${ev.title}</h2>
