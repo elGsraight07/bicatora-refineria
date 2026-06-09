@@ -599,6 +599,14 @@ function buildGanttHTML(tasks,eventStartDate,editMode,eventId) {
 }
 
 // ─── PDF footer ────────────────────────────────────────────────────────────────
+function safeTxt(s){
+  return (s||'').replace(/[\u0080-\uFFFF]/g,c=>{
+    const m={'á':'a','é':'e','í':'i','ó':'o','ú':'u','ñ':'n','ü':'u','à':'a','â':'a','ä':'a',
+             'Á':'A','É':'E','Í':'I','Ó':'O','Ú':'U','Ñ':'N','Ü':'U','À':'A','Â':'A','Ä':'A'};
+    return m[c]!==undefined?m[c]:'';
+  });
+}
+
 function addPdfFooter(doc) {
   const pgW=doc.internal.pageSize.getWidth(),pgH=doc.internal.pageSize.getHeight(),pc=doc.internal.getNumberOfPages();
   const ds=new Date().toLocaleDateString('es-MX',{year:'numeric',month:'long',day:'numeric'});
@@ -629,12 +637,17 @@ window.exportGanttPDF = function(eventId) {
     const pgW=doc.internal.pageSize.getWidth();
     const pgH=doc.internal.pageSize.getHeight();
 
-    // Title
+    // Title — sanitize text to avoid jsPDF encoding errors
+    function safeTxt(s){ return (s||'').replace(/[\u0080-\uFFFF]/g, c => {
+      const map={'á':'a','é':'e','í':'i','ó':'o','ú':'u','ñ':'n','ü':'u',
+                 'Á':'A','É':'E','Í':'I','Ó':'O','Ú':'U','Ñ':'N','Ü':'U'};
+      return map[c]||'';
+    }); }
     doc.setTextColor(20,20,20);doc.setFontSize(11);doc.setFont('helvetica','bold');
-    doc.text((ev.title||'').substring(0,90),10,12);
+    doc.text(safeTxt(ev.title).substring(0,90),10,12);
     doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(90,90,90);
-    const infoLine=[TYPE_LABELS[ev.type]||'',ev.equipment||'',ev.responsible||'',ev.duration?`${ev.duration} días`:''].filter(Boolean).join('  ·  ');
-    doc.text(infoLine,10,18);
+    const infoLine=[TYPE_LABELS[ev.type]||'',ev.equipment||'',ev.responsible||'',ev.duration?ev.duration+' dias':''].filter(Boolean).join('  -  ');
+    doc.text(safeTxt(infoLine),10,18);
     doc.setDrawColor(200,200,200);doc.setLineWidth(0.3);doc.line(10,21,pgW-10,21);
 
     // Calculate column widths
@@ -659,7 +672,7 @@ window.exportGanttPDF = function(eventId) {
     let mX=startX+taskColW+respColW;
     monthSpans.forEach(ms=>{
       if(mX+2<startX+taskColW+respColW+totalDays*dayW)
-        doc.text(ms.label.substring(0,12),mX+2,startY+4);
+        doc.text(safeTxt(ms.label.substring(0,12)),mX+2,startY+4);
       mX+=ms.span*dayW;
     });
 
