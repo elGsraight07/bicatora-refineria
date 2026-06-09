@@ -14,8 +14,25 @@ let fileContents = {};
 let fb;
 
 // ─── Boot ───────────────────────────────────────────────────────────────────
-window.addEventListener('firebaseReady', () => { fb = window._fb; subscribeToEvents(); renderAIChips(); });
+function initApp() {
+  if (window._fb) {
+    fb = window._fb;
+    subscribeToEvents();
+    renderAIChips();
+  } else {
+    window.addEventListener('firebaseReady', () => {
+      fb = window._fb;
+      subscribeToEvents();
+      renderAIChips();
+    });
+  }
+}
 
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initApp);
+} else {
+  initApp();
+}
 function subscribeToEvents() {
   setSyncStatus('saving');
   const q = fb.query(fb.collection(fb.db,'events'), fb.orderBy('date','desc'));
