@@ -8,18 +8,16 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-  <!-- Firebase SDKs -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import {
-      getFirestore, collection, getDocs, addDoc, updateDoc, deleteDoc, doc, onSnapshot, serverTimestamp, query, orderBy
+      getFirestore, collection, getDocs, addDoc, updateDoc, deleteDoc,
+      doc, onSnapshot, serverTimestamp, query, orderBy
     } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
     import {
       getStorage, ref, uploadBytes, getDownloadURL, deleteObject
     } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
-    // ─── FIREBASE CONFIG ───────────────────────────────────────────
-    // Replace with your own firebaseConfig from the Firebase console
     const firebaseConfig = {
       apiKey:            "AIzaSyBBdJn3w57czqeaeb75LfOo-unc8P2y-FE",
       authDomain:        "bitacora-refineria.firebaseapp.com",
@@ -28,22 +26,18 @@
       messagingSenderId: "1096551197586",
       appId:             "1:1096551197586:web:02900d4f7b0d1d497bef4b"
     };
-    // ──────────────────────────────────────────────────────────────
 
-    const app = initializeApp(firebaseConfig);
-    const db  = getFirestore(app);
+    const app     = initializeApp(firebaseConfig);
+    const db      = getFirestore(app);
     const storage = getStorage(app);
 
-    // Expose to global scope so app.js can use them
     window._fb = { db, storage, collection, getDocs, addDoc, updateDoc, deleteDoc, doc, onSnapshot, serverTimestamp, query, orderBy, ref, uploadBytes, getDownloadURL, deleteObject };
     window.dispatchEvent(new Event("firebaseReady"));
   </script>
 </head>
 <body>
-
 <div class="app" id="app">
 
-  <!-- HEADER -->
   <div class="header">
     <div class="header-icon"><i class="ti ti-flame"></i></div>
     <div>
@@ -51,12 +45,11 @@
       <p>Registro histórico de eventos, programas y documentos</p>
     </div>
     <div class="header-right">
-      <span id="sync-status" class="sync-badge sync-ok"><i class="ti ti-cloud-check"></i> Sincronizado</span>
+      <span id="sync-status" class="sync-badge sync-saving"><i class="ti ti-cloud-upload"></i> Conectando...</span>
       <button class="btn-primary" onclick="openNewModal()"><i class="ti ti-plus"></i> Nuevo evento</button>
     </div>
   </div>
 
-  <!-- NAV -->
   <div class="nav">
     <div class="nav-tab active" onclick="switchTab('dashboard')"><i class="ti ti-chart-bar"></i> Dashboard</div>
     <div class="nav-tab" onclick="switchTab('events')"><i class="ti ti-list"></i> Eventos</div>
@@ -64,7 +57,6 @@
     <div class="nav-tab" onclick="switchTab('ai')"><i class="ti ti-message-circle"></i> Pregúntale</div>
   </div>
 
-  <!-- DASHBOARD -->
   <div id="view-dashboard" class="view active">
     <div class="stats-grid" id="stats-grid"></div>
     <div class="section-header">
@@ -74,7 +66,6 @@
     <div class="events-list" id="recent-list"></div>
   </div>
 
-  <!-- EVENTS -->
   <div id="view-events" class="view">
     <div class="toolbar">
       <input type="text" id="search-input" placeholder="Buscar eventos..." oninput="renderEvents()" />
@@ -84,7 +75,6 @@
     <div class="events-list" id="events-list"></div>
   </div>
 
-  <!-- GANTT -->
   <div id="view-gantt" class="view">
     <div class="gantt-toolbar">
       <div class="gantt-title-block">
@@ -109,14 +99,13 @@
     </div>
   </div>
 
-  <!-- AI -->
   <div id="view-ai" class="view">
     <div class="info-note">
       <i class="ti ti-sparkles"></i>
-      <span>Consulta todos los eventos registrados en Firebase, sus Gantts y archivos adjuntos. Pregunta en español o inglés.</span>
+      <span>Consulta todos los eventos en Firebase, sus Gantts y archivos adjuntos. Pregunta en español o inglés.</span>
     </div>
     <div class="ai-chat" id="ai-chat">
-      <div class="msg msg-ai">Hola, soy el asistente de la refinería. Tengo acceso a todos los eventos registrados, sus programas de trabajo y archivos. ¿Qué necesitas saber?</div>
+      <div class="msg msg-ai">Hola, soy el asistente de la refinería. Tengo acceso a todos los eventos, programas de trabajo y archivos registrados. ¿Qué necesitas saber?</div>
     </div>
     <div class="ai-chips" id="ai-chips"></div>
     <div class="ai-input-row">
@@ -125,12 +114,9 @@
     </div>
   </div>
 
-</div><!-- /app -->
-
+</div>
 <div id="modal-root"></div>
 <div class="toast" id="toast"></div>
-
 <script src="app.js" type="module"></script>
 </body>
 </html>
-<!-- primer deployment -->
