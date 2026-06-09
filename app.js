@@ -1,4 +1,4 @@
-// app.js — Bitácora de Refinería (con Firebase Storage completo)
+// app.js — Bitácora de Refinería
 
 const TYPE_LABELS = {shutdown:'Paro de planta',repair:'Reparación',catalyst:'Catalizador',material:'Materiales',maintenance:'Mantenimiento',other:'Otro'};
 const TYPE_COLORS = {shutdown:'#E24B4A',repair:'#EF9F27',catalyst:'#1D9E75',material:'#185FA5',maintenance:'#7F77DD',other:'#888780'};
@@ -11,32 +11,34 @@ let events = [];
 let activeFilter = 'all';
 let currentDetailTab = 'info';
 let fileContents = {};
-let fb;
 
-// ─── Boot ───────────────────────────────────────────────────────────────────
-function initApp() {
-  if (window._fb) {
-    fb = window._fb;
-    subscribeToEvents();
-    renderAIChips();
-  } else {
-    window.addEventListener('firebaseReady', () => {
-      fb = window._fb;
-      subscribeToEvents();
-      renderAIChips();
-    });
-  }
-}
+// ─── Import Firebase directly (no event needed) ───────────────────────────────
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initApp);
-} else {
-  initApp();
-}
+const firebaseConfig = {
+  apiKey:            "AIzaSyBBdJn3w57czqeaeb75LfOo-unc8P2y-FE",
+  authDomain:        "bitacora-refineria.firebaseapp.com",
+  projectId:         "bitacora-refineria",
+  storageBucket:     "bitacora-refineria.firebasestorage.app",
+  messagingSenderId: "1096551197586",
+  appId:             "1:1096551197586:web:02900d4f7b0d1d497bef4b"
+};
+
+const app     = initializeApp(firebaseConfig);
+const db      = getFirestore(app);
+const storage = getStorage(app);
+
+// Boot immediately
+subscribeToEvents();
+renderAIChips();
+
+// ─── Firestore listener ───────────────────────────────────────────────────────
 function subscribeToEvents() {
   setSyncStatus('saving');
-  const q = fb.query(fb.collection(fb.db,'events'), fb.orderBy('date','desc'));
-  fb.onSnapshot(q, snap => {
+  const q = query(collection(db,'events'), orderBy('date','desc'));
+  onSnapshot(q, snap => {
     events = snap.docs.map(d => ({id:d.id,...d.data()}));
     renderDashboard(); renderEvents(); populateGanttSelect(); setSyncStatus('ok');
   }, err => { console.error(err); setSyncStatus('error'); });
@@ -44,17 +46,24 @@ function subscribeToEvents() {
 
 function setSyncStatus(s) {
   const el = document.getElementById('sync-status'); if(!el) return;
-  const m = {ok:['sync-ok','<i class="ti ti-cloud-check"></i> Sincronizado'],saving:['sync-saving','<i class="ti ti-cloud-upload"></i> Guardando...'],error:['sync-error','<i class="ti ti-cloud-x"></i> Error']};
+  const m = {
+    ok:     ['sync-ok',      '<i class="ti ti-cloud-check"></i> Sincronizado'],
+    saving: ['sync-saving',  '<i class="ti ti-cloud-upload"></i> Guardando...'],
+    error:  ['sync-error',   '<i class="ti ti-cloud-x"></i> Error'],
+  };
   el.className='sync-badge '+m[s][0]; el.innerHTML=m[s][1];
 }
 
-function showToast(msg) { const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2800); }
+function showToast(msg) {
+  const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2800);
+}
 function parseDate(s) { const[y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d); }
 function addDays(date,n) { const d=new Date(date); d.setDate(d.getDate()+n); return d; }
 function fmtSize(b) { return b<1024*1024?Math.round(b/1024)+' KB':(b/1024/1024).toFixed(1)+' MB'; }
 window.closeModal = () => document.getElementById('modal-root').innerHTML='';
 
-// ─── Tab switch ──────────────────────────────────────────────────────────────
+// ─── Tab switch ───────────────────────────────────────────────────────────────
 window.switchTab = function(tab) {
   document.querySelectorAll('.nav-tab').forEach((t,i)=>t.classList.toggle('active',['dashboard','events','gantt','ai'][i]===tab));
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
@@ -62,7 +71,7 @@ window.switchTab = function(tab) {
   if(tab==='gantt'){populateGanttSelect();loadGanttTab();}
 };
 
-// ─── Dashboard ───────────────────────────────────────────────────────────────
+// ─── Dashboard ────────────────────────────────────────────────────────────────
 function renderDashboard() {
   const total=events.length, wg=events.filter(e=>e.gantt&&e.gantt.length).length, tf=events.reduce((s,e)=>s+(e.files||[]).length,0);
   document.getElementById('stats-grid').innerHTML=`
@@ -72,7 +81,7 @@ function renderDashboard() {
   document.getElementById('recent-list').innerHTML=[...events].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,3).map(eventCardHTML).join('');
 }
 
-// ─── Events ──────────────────────────────────────────────────────────────────
+// ─── Events ───────────────────────────────────────────────────────────────────
 function eventCardHTML(e) {
   const d=new Date(e.date+'T00:00:00').toLocaleDateString('es-MX',{year:'numeric',month:'short',day:'numeric'});
   const color=TYPE_COLORS[e.type]||'#888780';
@@ -99,7 +108,7 @@ window.renderEvents = function() {
 };
 window.setFilter = t => { activeFilter=t; renderEvents(); };
 
-// ─── New event ───────────────────────────────────────────────────────────────
+// ─── New event ────────────────────────────────────────────────────────────────
 let pendingFiles = [];
 
 window.openNewModal = function() {
@@ -135,7 +144,7 @@ window.openNewModal = function() {
           <div class="form-group"><label>Notas / observaciones</label><textarea id="f-notes"></textarea></div>
           <div class="form-group"><label>Etiquetas (separadas por coma)</label><input type="text" id="f-tags" /></div>
           <div class="form-group">
-            <label>Archivos adjuntos <span style="font-size:11px;color:var(--text-muted)">(se suben a Firebase Storage — descargables desde cualquier dispositivo)</span></label>
+            <label>Archivos adjuntos</label>
             <div class="file-drop" onclick="document.getElementById('nfi').click()">
               <i class="ti ti-upload" style="font-size:20px;display:block;margin-bottom:6px"></i>
               Seleccionar archivos (PDF, Excel, Word, imágenes, TXT...)
@@ -166,11 +175,8 @@ window.toggleNewFields = function() {
 window.previewNewFiles = function(input) {
   pendingFiles=Array.from(input.files);
   document.getElementById('nfp').innerHTML=pendingFiles.map(f=>`
-    <div class="file-item">
-      <i class="ti ti-file" style="font-size:16px;color:#185FA5"></i>
-      <span class="file-item-name">${f.name}</span>
-      <span class="file-size">${fmtSize(f.size)}</span>
-    </div>`).join('');
+    <div class="file-item"><i class="ti ti-file" style="font-size:16px;color:#185FA5"></i>
+    <span class="file-item-name">${f.name}</span><span class="file-size">${fmtSize(f.size)}</span></div>`).join('');
 };
 
 window.saveNewEvent = async function() {
@@ -188,14 +194,14 @@ window.saveNewEvent = async function() {
     materials:(document.getElementById('f-materials')||{}).value||'',
     catalyst:(document.getElementById('f-catalyst')||{}).value||'',
     duration:parseInt((document.getElementById('f-duration')||{}).value)||null,
-    files:[],gantt:[],createdAt:fb.serverTimestamp(),
+    files:[],gantt:[],
+    createdAt: serverTimestamp(),
   };
   try {
-    const docRef=await fb.addDoc(fb.collection(fb.db,'events'),newEv);
+    const docRef=await addDoc(collection(db,'events'),newEv);
     if(pendingFiles.length){
       const uploaded=await uploadFiles(docRef.id,pendingFiles);
-      await fb.updateDoc(fb.doc(fb.db,'events',docRef.id),{files:uploaded});
-      // Cache readable content for AI
+      await updateDoc(doc(db,'events',docRef.id),{files:uploaded});
       for(const f of pendingFiles){
         const ext=f.name.split('.').pop().toLowerCase();
         if(['txt','md','csv'].includes(ext)){
@@ -215,17 +221,17 @@ window.saveNewEvent = async function() {
   }
 };
 
-// ─── Firebase Storage upload ──────────────────────────────────────────────────
+// ─── Storage upload ───────────────────────────────────────────────────────────
 async function uploadFiles(eventId, files) {
   const uploaded=[];
   for(const file of files){
     try {
       const path=`events/${eventId}/${Date.now()}_${file.name}`;
-      const storRef=fb.ref(fb.storage,path);
-      await fb.uploadBytes(storRef,file);
-      const url=await fb.getDownloadURL(storRef);
+      const storRef=ref(storage,path);
+      await uploadBytes(storRef,file);
+      const url=await getDownloadURL(storRef);
       uploaded.push({name:file.name,size:fmtSize(file.size),type:file.name.split('.').pop().toLowerCase(),url,path});
-    } catch(err){ console.error('Error subiendo '+file.name, err); }
+    } catch(err){ console.error('Error subiendo '+file.name,err); }
   }
   return uploaded;
 }
@@ -248,25 +254,20 @@ function renderDetailModal(e) {
       <div class="detail-row"><span class="detail-label">Equipo / Área</span><span>${e.equipment||'—'}</span></div>
       <div class="detail-row"><span class="detail-label">Responsable</span><span>${e.responsible||'—'}</span></div>
       ${e.duration?`<div class="detail-row"><span class="detail-label">Duración</span><span>${e.duration} días</span></div>`:''}
-      ${e.catalyst?`<div class="detail-row"><span class="detail-label">Catalizador</span><span style="text-align:right;max-width:60%">${e.catalyst}</span></div>`:''}
+      ${e.catalyst?`<div class="detail-row"><span class="detail-label">Catalizador</span><span>${e.catalyst}</span></div>`:''}
     </div>
     ${e.materials?`<div class="detail-section"><h3>Materiales</h3><div style="font-size:13px;line-height:1.7;color:var(--text-muted)">${e.materials}</div></div>`:''}
     ${e.notes?`<div class="detail-section"><h3>Notas</h3><div style="font-size:13px;line-height:1.7;color:var(--text-muted)">${e.notes}</div></div>`:''}
     ${e.tags&&e.tags.length?`<div class="detail-section"><h3>Etiquetas</h3><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">${e.tags.map(t=>`<span class="tag">${t}</span>`).join('')}</div></div>`:''}`;
-
   const ganttHTML=buildGanttHTML(e.gantt,e.date,true,e.id);
-
   const filesHTML=`
     <div class="file-drop" onclick="document.getElementById('fi-${e.id}').click()">
       <i class="ti ti-upload" style="font-size:20px;display:block;margin-bottom:6px"></i>
       Adjuntar archivos — se suben a Firebase Storage
       <input type="file" id="fi-${e.id}" multiple style="display:none" onchange="attachFilesToEvent('${e.id}',this)" />
     </div>
-    <div class="file-list" id="fl-${e.id}">
-      ${(e.files||[]).map(f=>fileItemHTML(f,e.id)).join('')}
-    </div>
+    <div class="file-list" id="fl-${e.id}">${(e.files||[]).map(f=>fileItemHTML(f,e.id)).join('')}</div>
     ${!(e.files&&e.files.length)?'<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:.5rem">Sin archivos adjuntos</div>':''}`;
-
   const tabs=[['info','Información','ti-info-circle'],['gantt','Programa Gantt','ti-calendar-event'],['files','Archivos','ti-paperclip']];
   document.getElementById('modal-root').innerHTML=`
     <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
@@ -327,17 +328,16 @@ window.saveDetailTask = async function(eid) {
   const resp=(document.getElementById('dgt-resp')||{}).value.trim();
   if(!name) return;
   const gantt=[...(ev.gantt||[]),{id:'g'+Date.now(),name,startDate,dur,resp,color:(ev.gantt||[]).length%GANTT_COLORS.length}];
-  await fb.updateDoc(fb.doc(fb.db,'events',eid),{gantt});
+  await updateDoc(doc(db,'events',eid),{gantt});
   document.getElementById('dt-gantt-content').innerHTML=buildGanttHTML(gantt,ev.date,true,eid);
   document.getElementById('dt-add-form').style.display='none';
   if(document.getElementById('dgt-name'))document.getElementById('dgt-name').value='';
 };
 
-// ─── Gantt edit ───────────────────────────────────────────────────────────────
 window.deleteTask = async function(tid,eid) {
   const ev=events.find(e=>e.id===eid); if(!ev) return;
   const gantt=(ev.gantt||[]).filter(t=>t.id!==tid);
-  await fb.updateDoc(fb.doc(fb.db,'events',eid),{gantt});
+  await updateDoc(doc(db,'events',eid),{gantt});
   const dtc=document.getElementById('dt-gantt-content');
   if(dtc)dtc.innerHTML=buildGanttHTML(gantt,ev.date,true,eid); else loadGanttTab();
 };
@@ -364,7 +364,7 @@ window.saveEditTask = async function(tid,eid) {
   t.resp=(document.getElementById('edit-resp-'+tid)||{}).value||'';
   t.startDate=(document.getElementById('edit-sd-'+tid)||{}).value||t.startDate;
   t.dur=parseInt((document.getElementById('edit-dur-'+tid)||{}).value)||t.dur;
-  await fb.updateDoc(fb.doc(fb.db,'events',eid),{gantt:ev.gantt});
+  await updateDoc(doc(db,'events',eid),{gantt:ev.gantt});
   const dtc=document.getElementById('dt-gantt-content');
   if(dtc)dtc.innerHTML=buildGanttHTML(ev.gantt,ev.date,true,eid); else loadGanttTab();
 };
@@ -374,16 +374,15 @@ window.cancelEdit = function(tid,eid) {
   if(dtc)dtc.innerHTML=buildGanttHTML(ev.gantt,ev.date,true,eid); else loadGanttTab();
 };
 
-// ─── Files with Storage ───────────────────────────────────────────────────────
+// ─── Files ────────────────────────────────────────────────────────────────────
 window.attachFilesToEvent = async function(eid,input) {
   const ev=events.find(e=>e.id===eid); if(!ev) return;
-  const files=Array.from(input.files);
   showToast('Subiendo archivos...');
   try {
-    const uploaded=await uploadFiles(eid,files);
+    const uploaded=await uploadFiles(eid,Array.from(input.files));
     const allFiles=[...(ev.files||[]),...uploaded.filter(u=>!(ev.files||[]).find(f=>f.name===u.name))];
-    await fb.updateDoc(fb.doc(fb.db,'events',eid),{files:allFiles});
-    for(const f of files){
+    await updateDoc(doc(db,'events',eid),{files:allFiles});
+    for(const f of Array.from(input.files)){
       const ext=f.name.split('.').pop().toLowerCase();
       if(['txt','md','csv'].includes(ext)){
         const text=await f.text();
@@ -392,16 +391,16 @@ window.attachFilesToEvent = async function(eid,input) {
         fileContents[eid].push({name:f.name,content:text.slice(0,8000)});
       }
     }
-    showToast('✓ Archivos subidos a Firebase Storage');
+    showToast('✓ Archivos subidos');
   } catch(err){ console.error(err); showToast('Error al subir archivos'); }
 };
 
 window.removeFile = async function(eid,path,name) {
   const ev=events.find(e=>e.id===eid); if(!ev) return;
   try {
-    if(path) await fb.deleteObject(fb.ref(fb.storage,path));
+    if(path) await deleteObject(ref(storage,path));
     const files=(ev.files||[]).filter(f=>f.name!==name);
-    await fb.updateDoc(fb.doc(fb.db,'events',eid),{files});
+    await updateDoc(doc(db,'events',eid),{files});
     if(fileContents[eid])fileContents[eid]=fileContents[eid].filter(x=>x.name!==name);
     showToast('Archivo eliminado');
   } catch(err){ console.error(err); }
@@ -421,7 +420,7 @@ function fileItemHTML(f,eid) {
   </div>`;
 }
 
-// ─── Gantt tab ────────────────────────────────────────────────────────────────
+// ─── Gantt tab ─────────────────────────────────────────────────────────────────
 window.populateGanttSelect = function() {
   const sel=document.getElementById('gantt-event-select'); if(!sel) return;
   const cur=sel.value;
@@ -462,13 +461,13 @@ window.saveGanttTask = async function() {
   const resp=(document.getElementById('gt-resp')||{}).value.trim();
   if(!name){alert('Escribe el nombre de la actividad');return;}
   const gantt=[...(ev.gantt||[]),{id:'g'+Date.now(),name,startDate,dur,resp,color:(ev.gantt||[]).length%GANTT_COLORS.length}];
-  await fb.updateDoc(fb.doc(fb.db,'events',id),{gantt});
+  await updateDoc(doc(db,'events',id),{gantt});
   document.getElementById('gt-name').value='';
   document.getElementById('gt-resp').value='';
   document.getElementById('gantt-add-form').style.display='none';
 };
 
-// ─── Gantt HTML ───────────────────────────────────────────────────────────────
+// ─── Gantt HTML ────────────────────────────────────────────────────────────────
 function buildGanttHTML(tasks,eventStartDate,editMode,eventId) {
   if(!tasks||!tasks.length) return'<div class="empty"><i class="ti ti-calendar-event"></i>Sin tareas. Agrega actividades con <strong>+ Agregar tarea</strong>.</div>';
   const starts=tasks.map(t=>parseDate(t.startDate));
@@ -480,8 +479,12 @@ function buildGanttHTML(tasks,eventStartDate,editMode,eventId) {
   const monthSpans=[];let cur=null;
   days.forEach(d=>{const key=`${d.getFullYear()}-${d.getMonth()}`;if(cur&&cur.key===key){cur.span++;}else{cur={key,label:`${MONTHS_ES[d.getMonth()]} ${d.getFullYear()}`,span:1};monthSpans.push(cur);}});
   const today=new Date();today.setHours(0,0,0,0);
-  const fh=editMode?`<th class="gantt-task-col" style="background:var(--bg);border-bottom:1px solid var(--border)"></th><th class="gantt-resp-col" style="background:var(--bg);border-bottom:1px solid var(--border)"></th><th class="gantt-action-col" style="background:var(--bg);border-bottom:1px solid var(--border)"></th>`:`<th class="gantt-task-col" style="background:var(--bg);border-bottom:1px solid var(--border)"></th><th class="gantt-resp-col" style="background:var(--bg);border-bottom:1px solid var(--border)"></th>`;
-  const fh2=editMode?`<th class="gantt-task-col" style="background:var(--bg);font-size:11px;font-weight:500;color:var(--text-muted);text-align:left;padding:4px 8px;border-bottom:1px solid var(--border)">Actividad</th><th class="gantt-resp-col" style="background:var(--bg);font-size:11px;color:var(--text-muted);border-bottom:1px solid var(--border)">Responsable</th><th class="gantt-action-col" style="background:var(--bg);border-bottom:1px solid var(--border)"></th>`:`<th class="gantt-task-col" style="background:var(--bg);font-size:11px;font-weight:500;color:var(--text-muted);text-align:left;padding:4px 8px;border-bottom:1px solid var(--border)">Actividad</th><th class="gantt-resp-col" style="background:var(--bg);font-size:11px;color:var(--text-muted);border-bottom:1px solid var(--border)">Responsable</th>`;
+  const fh=editMode
+    ?`<th class="gantt-task-col" style="background:var(--bg);border-bottom:1px solid var(--border)"></th><th class="gantt-resp-col" style="background:var(--bg);border-bottom:1px solid var(--border)"></th><th class="gantt-action-col" style="background:var(--bg);border-bottom:1px solid var(--border)"></th>`
+    :`<th class="gantt-task-col" style="background:var(--bg);border-bottom:1px solid var(--border)"></th><th class="gantt-resp-col" style="background:var(--bg);border-bottom:1px solid var(--border)"></th>`;
+  const fh2=editMode
+    ?`<th class="gantt-task-col" style="background:var(--bg);font-size:11px;font-weight:500;color:var(--text-muted);text-align:left;padding:4px 8px;border-bottom:1px solid var(--border)">Actividad</th><th class="gantt-resp-col" style="background:var(--bg);font-size:11px;color:var(--text-muted);border-bottom:1px solid var(--border)">Responsable</th><th class="gantt-action-col" style="background:var(--bg);border-bottom:1px solid var(--border)"></th>`
+    :`<th class="gantt-task-col" style="background:var(--bg);font-size:11px;font-weight:500;color:var(--text-muted);text-align:left;padding:4px 8px;border-bottom:1px solid var(--border)">Actividad</th><th class="gantt-resp-col" style="background:var(--bg);font-size:11px;color:var(--text-muted);border-bottom:1px solid var(--border)">Responsable</th>`;
   let html=`<div class="gantt-wrap"><table class="gantt-table"><thead><tr>${fh}`;
   monthSpans.forEach(ms=>{html+=`<th class="gantt-hdr-month" colspan="${ms.span}">${ms.label}</th>`;});
   html+=`</tr><tr>${fh2}`;
@@ -497,147 +500,103 @@ function buildGanttHTML(tasks,eventStartDate,editMode,eventId) {
   html+='</tbody></table></div>';return html;
 }
 
-// ─── PDF footer ──────────────────────────────────────────────────────────────
+// ─── PDF footer ────────────────────────────────────────────────────────────────
 function addPdfFooter(doc) {
   const pgW=doc.internal.pageSize.getWidth(),pgH=doc.internal.pageSize.getHeight(),pc=doc.internal.getNumberOfPages();
   const ds=new Date().toLocaleDateString('es-MX',{year:'numeric',month:'long',day:'numeric'});
   for(let i=1;i<=pc;i++){doc.setPage(i);doc.setDrawColor(210,210,210);doc.setLineWidth(0.2);doc.line(10,pgH-9,pgW-10,pgH-9);doc.setTextColor(160,160,160);doc.setFontSize(7);doc.setFont('helvetica','normal');doc.text(ds,10,pgH-5);doc.text(`${i} / ${pc}`,pgW-10,pgH-5,{align:'right'});}
 }
 
-// ─── Export Gantt PDF ─────────────────────────────────────────────────────────
+// ─── Export Gantt PDF ──────────────────────────────────────────────────────────
 window.exportGanttPDF = function(eventId) {
   const{jsPDF}=window.jspdf||{};
   const id=eventId||(document.getElementById('gantt-event-select')||{}).value;
   const ev=events.find(e=>e.id===id);
   if(!ev||!ev.gantt||!ev.gantt.length){showToast('Sin tareas para exportar');return;}
   const tasks=ev.gantt;
-  const starts=tasks.map(t=>parseDate(t.startDate));
-  const ends=tasks.map(t=>addDays(parseDate(t.startDate),t.dur));
-  const minDate=new Date(Math.min(...starts));
-  const maxDate=new Date(Math.max(...ends));
+  const starts=tasks.map(t=>parseDate(t.startDate)),ends=tasks.map(t=>addDays(parseDate(t.startDate),t.dur));
+  const minDate=new Date(Math.min(...starts)),maxDate=new Date(Math.max(...ends));
   const totalDays=Math.ceil((maxDate-minDate)/86400000)+1;
   const days=Array.from({length:totalDays},(_,i)=>addDays(minDate,i));
-  const orientation=totalDays>25?'landscape':'portrait';
-  const doc=new jsPDF({orientation,unit:'mm',format:'a4'});
+  const doc=new jsPDF({orientation:totalDays>25?'landscape':'portrait',unit:'mm',format:'a4'});
   const pgW=doc.internal.pageSize.getWidth();
-  doc.setTextColor(20,20,20);doc.setFontSize(12);doc.setFont('helvetica','bold');
-  doc.text(ev.title.substring(0,80),10,14);
+  doc.setTextColor(20,20,20);doc.setFontSize(12);doc.setFont('helvetica','bold');doc.text(ev.title.substring(0,80),10,14);
   doc.setFontSize(8.5);doc.setFont('helvetica','normal');doc.setTextColor(90,90,90);
   doc.text([TYPE_LABELS[ev.type],ev.equipment,ev.responsible,ev.duration?`${ev.duration} días`:''].filter(Boolean).join('  ·  '),10,20);
   doc.setDrawColor(200,200,200);doc.setLineWidth(0.3);doc.line(10,23,pgW-10,23);
-  const taskColW=50,respColW=28,dayW=Math.min(8,Math.floor((pgW-taskColW-respColW-10)/totalDays));
-  const rowH=7,headerH=10,startX=5;let startY=27;
-  const monthSpans=[];let curM=null;
-  days.forEach(d=>{const key=`${d.getFullYear()}-${d.getMonth()}`;if(curM&&curM.key===key){curM.span++;}else{curM={key,label:`${MONTHS_ES[d.getMonth()]} ${d.getFullYear()}`,span:1};monthSpans.push(curM);}});
-  doc.setFillColor(230,241,251);doc.rect(startX,startY,taskColW+respColW+totalDays*dayW,headerH/2,'F');
+  const tCW=50,rCW=28,dW=Math.min(8,Math.floor((pgW-tCW-rCW-10)/totalDays)),rH=7,hH=10,sX=5;let sY=27;
+  const mSpans=[];let cM=null;
+  days.forEach(d=>{const k=`${d.getFullYear()}-${d.getMonth()}`;if(cM&&cM.key===k){cM.span++;}else{cM={key:k,label:`${MONTHS_ES[d.getMonth()]} ${d.getFullYear()}`,span:1};mSpans.push(cM);}});
+  doc.setFillColor(230,241,251);doc.rect(sX,sY,tCW+rCW+totalDays*dW,hH/2,'F');
   doc.setFontSize(7);doc.setTextColor(24,95,165);doc.setFont('helvetica','bold');
-  let mX=startX+taskColW+respColW;monthSpans.forEach(ms=>{doc.text(ms.label,mX+2,startY+4);mX+=ms.span*dayW;});
-  const dhY=startY+headerH/2;
-  doc.setFillColor(242,245,248);doc.rect(startX,dhY,taskColW+respColW+totalDays*dayW,headerH/2,'F');
+  let mX=sX+tCW+rCW;mSpans.forEach(ms=>{doc.text(ms.label,mX+2,sY+4);mX+=ms.span*dW;});
+  const dhY=sY+hH/2;doc.setFillColor(242,245,248);doc.rect(sX,dhY,tCW+rCW+totalDays*dW,hH/2,'F');
   doc.setFontSize(6);doc.setFont('helvetica','normal');
-  days.forEach((d,i)=>{const dow=d.getDay();doc.setTextColor(dow===0||dow===6?[200,80,80]:[110,110,110]);doc.text(String(d.getDate()),startX+taskColW+respColW+i*dayW+dayW/2,dhY+3.5,{align:'center'});});
-  doc.setTextColor(90,90,90);doc.setFontSize(7);doc.setFont('helvetica','bold');
-  doc.text('Actividad',startX+2,startY+4);doc.text('Responsable',startX+taskColW+2,startY+4);
-  doc.setDrawColor(190,190,190);doc.setLineWidth(0.2);
-  doc.rect(startX,startY,taskColW+respColW+totalDays*dayW,headerH,undefined);
-  doc.line(startX+taskColW,startY,startX+taskColW,startY+headerH);
-  doc.line(startX+taskColW+respColW,startY,startX+taskColW+respColW,startY+headerH);
-  let rowY=startY+headerH;
+  days.forEach((d,i)=>{const dow=d.getDay();doc.setTextColor(dow===0||dow===6?[200,80,80]:[110,110,110]);doc.text(String(d.getDate()),sX+tCW+rCW+i*dW+dW/2,dhY+3.5,{align:'center'});});
+  doc.setTextColor(90,90,90);doc.setFontSize(7);doc.setFont('helvetica','bold');doc.text('Actividad',sX+2,sY+4);doc.text('Responsable',sX+tCW+2,sY+4);
+  doc.setDrawColor(190,190,190);doc.setLineWidth(0.2);doc.rect(sX,sY,tCW+rCW+totalDays*dW,hH,undefined);doc.line(sX+tCW,sY,sX+tCW,sY+hH);doc.line(sX+tCW+rCW,sY,sX+tCW+rCW,sY+hH);
+  let rY=sY+hH;
   tasks.forEach((t,ti)=>{
     const rgb=GANTT_RGB[t.color%GANTT_RGB.length]||[55,138,221];
-    doc.setFillColor(...(ti%2===0?[255,255,255]:[249,251,253]));
-    doc.rect(startX,rowY,taskColW+respColW+totalDays*dayW,rowH,'F');
-    doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(30,30,30);
-    doc.text((t.name.length>28?t.name.substring(0,27)+'…':t.name),startX+2,rowY+rowH/2+1.5);
-    doc.setTextColor(100,100,100);
-    doc.text(((t.resp||'—').length>16?(t.resp||'').substring(0,15)+'…':(t.resp||'—')),startX+taskColW+2,rowY+rowH/2+1.5);
-    const tStart=parseDate(t.startDate);
-    days.forEach((d,i)=>{
-      if(d>=tStart&&d<addDays(tStart,t.dur)){
-        const iF=d.getTime()===tStart.getTime(),iL=d.getTime()===addDays(tStart,t.dur-1).getTime();
-        const bx=startX+taskColW+respColW+i*dayW;
-        doc.setFillColor(...rgb);doc.roundedRect(bx+0.8,rowY+1.5,dayW-1.6,rowH-3,iF?1:0,iL?1:0,'F');
-      }
-    });
-    doc.setDrawColor(220,220,220);doc.setLineWidth(0.1);
-    doc.line(startX,rowY+rowH,startX+taskColW+respColW+totalDays*dayW,rowY+rowH);
-    doc.line(startX+taskColW,rowY,startX+taskColW,rowY+rowH);
-    doc.line(startX+taskColW+respColW,rowY,startX+taskColW+respColW,rowY+rowH);
-    rowY+=rowH;
+    doc.setFillColor(...(ti%2===0?[255,255,255]:[249,251,253]));doc.rect(sX,rY,tCW+rCW+totalDays*dW,rH,'F');
+    doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(30,30,30);doc.text((t.name.length>28?t.name.substring(0,27)+'…':t.name),sX+2,rY+rH/2+1.5);
+    doc.setTextColor(100,100,100);doc.text(((t.resp||'—').length>16?(t.resp||'').substring(0,15)+'…':(t.resp||'—')),sX+tCW+2,rY+rH/2+1.5);
+    const tS=parseDate(t.startDate);
+    days.forEach((d,i)=>{if(d>=tS&&d<addDays(tS,t.dur)){const iF=d.getTime()===tS.getTime(),iL=d.getTime()===addDays(tS,t.dur-1).getTime();const bx=sX+tCW+rCW+i*dW;doc.setFillColor(...rgb);doc.roundedRect(bx+0.8,rY+1.5,dW-1.6,rH-3,iF?1:0,iL?1:0,'F');}});
+    doc.setDrawColor(220,220,220);doc.setLineWidth(0.1);doc.line(sX,rY+rH,sX+tCW+rCW+totalDays*dW,rY+rH);doc.line(sX+tCW,rY,sX+tCW,rY+rH);doc.line(sX+tCW+rCW,rY,sX+tCW+rCW,rY+rH);rY+=rH;
   });
-  doc.setDrawColor(160,160,160);doc.setLineWidth(0.3);
-  doc.rect(startX,startY,taskColW+respColW+totalDays*dayW,headerH+tasks.length*rowH,undefined);
-  addPdfFooter(doc);
-  doc.save(`Gantt_${ev.title.replace(/[^a-zA-Z0-9]/g,'_').substring(0,40)}.pdf`);
-  showToast('Gantt exportado');
+  doc.setDrawColor(160,160,160);doc.setLineWidth(0.3);doc.rect(sX,sY,tCW+rCW+totalDays*dW,hH+tasks.length*rH,undefined);
+  addPdfFooter(doc);doc.save(`Gantt_${ev.title.replace(/[^a-zA-Z0-9]/g,'_').substring(0,40)}.pdf`);showToast('Gantt exportado');
 };
 
-// ─── Export All Events PDF ────────────────────────────────────────────────────
+// ─── Export All Events PDF ─────────────────────────────────────────────────────
 window.exportAllEventsPDF = function() {
   const{jsPDF}=window.jspdf||{};
   const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
-  const pgW=doc.internal.pageSize.getWidth(),pgH=doc.internal.pageSize.getHeight();
-  const margin=10,colW=pgW-margin*2;
-  const sorted=[...events].sort((a,b)=>new Date(b.date)-new Date(a.date));
-  let y=14;
+  const pgW=doc.internal.pageSize.getWidth(),pgH=doc.internal.pageSize.getHeight(),margin=10,colW=pgW-margin*2;
+  const sorted=[...events].sort((a,b)=>new Date(b.date)-new Date(a.date));let y=14;
   sorted.forEach((ev,idx)=>{
     if(y>pgH-50){doc.addPage();y=14;}
     const rgb=TYPE_RGB[ev.type]||[136,135,128];
-    doc.setFillColor(...rgb);doc.rect(margin,y,2.5,32,'F');
-    doc.setFillColor(250,251,252);doc.rect(margin+2.5,y,colW-2.5,32,'F');
-    doc.setDrawColor(220,220,220);doc.setLineWidth(0.2);doc.rect(margin,y,colW,32,undefined);
-    doc.setTextColor(...rgb);doc.setFontSize(7);doc.setFont('helvetica','bold');
-    doc.text(`#${String(idx+1).padStart(2,'0')}  ${TYPE_LABELS[ev.type].toUpperCase()}`,margin+5,y+5);
-    doc.setTextColor(20,20,20);doc.setFontSize(10);doc.setFont('helvetica','bold');
-    doc.text(doc.splitTextToSize(ev.title,colW-15)[0],margin+5,y+10);
+    doc.setFillColor(...rgb);doc.rect(margin,y,2.5,32,'F');doc.setFillColor(250,251,252);doc.rect(margin+2.5,y,colW-2.5,32,'F');doc.setDrawColor(220,220,220);doc.setLineWidth(0.2);doc.rect(margin,y,colW,32,undefined);
+    doc.setTextColor(...rgb);doc.setFontSize(7);doc.setFont('helvetica','bold');doc.text(`#${String(idx+1).padStart(2,'0')}  ${TYPE_LABELS[ev.type].toUpperCase()}`,margin+5,y+5);
+    doc.setTextColor(20,20,20);doc.setFontSize(10);doc.setFont('helvetica','bold');doc.text(doc.splitTextToSize(ev.title,colW-15)[0],margin+5,y+10);
     doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(90,90,90);
     const d=new Date(ev.date+'T00:00:00').toLocaleDateString('es-MX',{year:'numeric',month:'short',day:'numeric'});
     doc.text([d,ev.equipment,ev.responsible,ev.duration?`${ev.duration} días`:''].filter(Boolean).join('  ·  '),margin+5,y+16);
     if(ev.notes){doc.setFontSize(7.5);doc.setTextColor(60,60,60);doc.text(doc.splitTextToSize(ev.notes,colW-15).slice(0,2).join('\n'),margin+5,y+21);}
-    const extras=[];
-    if(ev.catalyst)extras.push(`Cat: ${ev.catalyst.substring(0,35)}`);
-    if(ev.materials)extras.push(`Mat: ${ev.materials.substring(0,40)}`);
-    if(ev.gantt&&ev.gantt.length)extras.push(`Gantt: ${ev.gantt.length} tareas`);
-    if(ev.files&&ev.files.length)extras.push(`Archivos: ${ev.files.length}`);
+    const extras=[];if(ev.catalyst)extras.push(`Cat: ${ev.catalyst.substring(0,35)}`);if(ev.materials)extras.push(`Mat: ${ev.materials.substring(0,40)}`);if(ev.gantt&&ev.gantt.length)extras.push(`Gantt: ${ev.gantt.length} tareas`);if(ev.files&&ev.files.length)extras.push(`Archivos: ${ev.files.length}`);
     if(extras.length){doc.setFontSize(7);doc.setTextColor(130,130,130);doc.text(extras.join('  |  ').substring(0,110),margin+5,y+28);}
     y+=36;
   });
-  addPdfFooter(doc);
-  doc.save(`Bitacora_${new Date().toISOString().split('T')[0]}.pdf`);
-  showToast('PDF exportado');
+  addPdfFooter(doc);doc.save(`Bitacora_${new Date().toISOString().split('T')[0]}.pdf`);showToast('PDF exportado');
 };
 
-// ─── Export Single Event PDF ──────────────────────────────────────────────────
+// ─── Export Single Event PDF ───────────────────────────────────────────────────
 window.exportEventPDF = function(eid) {
   const{jsPDF}=window.jspdf||{};
   const ev=events.find(e=>e.id===eid); if(!ev) return;
   const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
-  const pgW=doc.internal.pageSize.getWidth(),pgH=doc.internal.pageSize.getHeight();
-  const margin=12,rgb=TYPE_RGB[ev.type]||[136,135,128];
-  doc.setFillColor(...rgb);doc.rect(margin,10,3,40,'F');
-  doc.setTextColor(20,20,20);doc.setFontSize(13);doc.setFont('helvetica','bold');
+  const pgW=doc.internal.pageSize.getWidth(),pgH=doc.internal.pageSize.getHeight(),margin=12,rgb=TYPE_RGB[ev.type]||[136,135,128];
+  doc.setFillColor(...rgb);doc.rect(margin,10,3,40,'F');doc.setTextColor(20,20,20);doc.setFontSize(13);doc.setFont('helvetica','bold');
   const tl=doc.splitTextToSize(ev.title,pgW-margin*2-5);doc.text(tl,margin+6,17);
-  doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(...rgb);
-  doc.text(TYPE_LABELS[ev.type],margin+6,17+tl.length*6+2);
+  doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(...rgb);doc.text(TYPE_LABELS[ev.type],margin+6,17+tl.length*6+2);
   let y=58;
   const fields=[['Fecha',new Date(ev.date+'T00:00:00').toLocaleDateString('es-MX',{year:'numeric',month:'long',day:'numeric'})],['Equipo / Área',ev.equipment],['Responsable',ev.responsible],['Duración',ev.duration?`${ev.duration} días`:null],['Catalizador',ev.catalyst],['Materiales',ev.materials]].filter(f=>f[1]);
-  doc.setFillColor(242,246,250);doc.rect(margin,y-5,pgW-margin*2,fields.length*8+5,'F');
-  doc.setDrawColor(210,220,230);doc.setLineWidth(0.2);doc.rect(margin,y-5,pgW-margin*2,fields.length*8+5,undefined);
+  doc.setFillColor(242,246,250);doc.rect(margin,y-5,pgW-margin*2,fields.length*8+5,'F');doc.setDrawColor(210,220,230);doc.setLineWidth(0.2);doc.rect(margin,y-5,pgW-margin*2,fields.length*8+5,undefined);
   fields.forEach(([label,val])=>{doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(100,100,100);doc.text(label+':',margin+3,y);doc.setFont('helvetica','normal');doc.setTextColor(20,20,20);doc.text(doc.splitTextToSize(String(val),pgW-margin*2-35)[0],margin+35,y);y+=8;});
   y+=6;
   if(ev.notes){doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(60,60,60);doc.text('Notas y observaciones',margin,y);y+=5;doc.setFont('helvetica','normal');doc.setFontSize(8.5);doc.setTextColor(40,40,40);const nl=doc.splitTextToSize(ev.notes,pgW-margin*2);doc.text(nl,margin,y);y+=nl.length*5+6;}
   if(ev.files&&ev.files.length){if(y>pgH-30){doc.addPage();y=14;}doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(60,60,60);doc.text('Archivos adjuntos',margin,y);y+=5;ev.files.forEach(f=>{doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(40,40,40);doc.text(`• ${f.name}  (${f.size})`,margin+3,y);y+=5;});}
-  addPdfFooter(doc);
-  doc.save(`Evento_${ev.title.replace(/[^a-zA-Z0-9]/g,'_').substring(0,40)}.pdf`);
-  showToast('Ficha exportada');
+  addPdfFooter(doc);doc.save(`Evento_${ev.title.replace(/[^a-zA-Z0-9]/g,'_').substring(0,40)}.pdf`);showToast('Ficha exportada');
   if(ev.gantt&&ev.gantt.length)exportGanttPDF(eid);
 };
 
-// ─── AI ──────────────────────────────────────────────────────────────────────
+// ─── AI ───────────────────────────────────────────────────────────────────────
 const SUGGESTIONS=['¿Cuándo fue el último paro de planta?','¿Qué catalizadores se han usado?','¿Quién estuvo a cargo del último evento?','What materials were ordered in 2024?'];
 function renderAIChips(){const el=document.getElementById('ai-chips');if(el)el.innerHTML=SUGGESTIONS.map(s=>`<button class="ai-chip" onclick="askAI('${s}')">${s}</button>`).join('');}
 window.sendAI=function(){const i=document.getElementById('ai-input');const q=i.value.trim();if(!q)return;i.value='';askAI(q);};
-function addMsg(text,role){const c=document.getElementById('ai-chat');const d=document.createElement('div');d.className='msg msg-'+role;d.textContent=text;c.appendChild(d);c.scrollTop=c.scrollHeight;return d;}
+function addMsg(text,role){const c=document.getElementById('ai-chat');const d=document.createElement('div');d.className='msg msg-'+role;d.textContent=text;c.appendChild(d);c.scrollTop=c.scrollHeight;}
 window.askAI=async function(question){
   addMsg(question,'user');
   const chat=document.getElementById('ai-chat');
@@ -650,7 +609,7 @@ window.askAI=async function(question){
     return base+extracted;
   }).join('\n\n---\n\n');
   try{
-    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,system:`You are an expert refinery operations assistant with full access to the plant's historical event log in Firebase. Data may be in Spanish or English — respond in the same language as the user. Be concise and technical, citing specific data when available.\n\nPLANT HISTORY:\n${ctx}`,messages:[{role:'user',content:question}]})});
+    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,system:`You are an expert refinery operations assistant. Data may be in Spanish or English — respond in the same language as the user. Be concise and technical.\n\nPLANT HISTORY:\n${ctx}`,messages:[{role:'user',content:question}]})});
     const data=await res.json();chat.removeChild(thinking);addMsg(data.content?.[0]?.text||'Sin respuesta.','ai');
-  }catch(err){chat.removeChild(thinking);addMsg('Error al conectar con el asistente de IA.','ai');}
+  }catch(err){chat.removeChild(thinking);addMsg('Error al conectar con el asistente.','ai');}
 };
